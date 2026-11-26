@@ -510,8 +510,6 @@ body:has(.timer:not([hidden])).has-photo[data-focus="weather"] .weather { top: 5
 .timer-label { font-size: 1.6rem; color: var(--muted); }
 .timer-label:empty { display: none; }
 .timer-time { font-size: 7rem; font-weight: 300; line-height: 1.1; }
-.timer-ends { font-size: 1.4rem; color: var(--muted); }
-.timer-ends:empty { display: none; }
 
 .timer-bar {
   height: 0.4rem;
