@@ -15,7 +15,7 @@ import recurring_ical_events
 
 # GOOGLE_CALENDAR_<NAME> is accepted too; the longer prefix must come first.
 ENV_PREFIXES = ("GOOGLE_CALENDAR_", "CALENDAR_")
-DAYS_AHEAD = 7
+DAYS_AHEAD = 31  # enough for the dashboard's month view
 CACHE_SECONDS = 300
 
 _lock = threading.Lock()

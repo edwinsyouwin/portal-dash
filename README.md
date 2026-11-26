@@ -96,7 +96,8 @@ to `PROVIDERS`, and set `provider` in `profile.toml`.
 
 ## Calendar
 
-The dashboard shows today's and tomorrow's Google Calendar events, in a card under the weather. For each calendar, copy
+The dashboard shows Google Calendar events in a card under the weather, with buttons to
+switch between today (and tomorrow), the next week and the next month. For each calendar, copy
 its private address from Google Calendar (Settings > the calendar under "Settings for my
 calendars" > "Secret address in iCal format") into `.env`:
 
