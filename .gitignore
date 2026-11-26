@@ -1,0 +1,24 @@
+# Secrets and personal settings (see .env.example and the *.example.* files)
+.env
+dashboard/config.js
+photoflow/profile.toml
+
+# Generated pictures, logs and reference photos
+photoflow/out/
+photoflow/logs/
+photoflow/refs/
+
+# Build output
+.gradle/
+.kotlin/
+build/
+local.properties
+*.apk
+__pycache__/
+*.pyc
+
+# Editors and macOS
+.DS_Store
+.idea/
+.vscode/
+*.iml

@@ -1,0 +1,68 @@
+# Who appears in the daily picture, what they are doing, and how it is drawn.
+
+# "openai" (needs OPENAI_API_KEY in .env) or "gemini" (needs GEMINI_API_KEY).
+provider = "openai"
+
+# How many extra pictures a day the dashboard's "new picture" button may make.
+button_daily_limit = 10
+
+# Every generated picture is also saved to this album in Photos (and so to iCloud).
+# Pictures in it are never used as reference photos. Set to "" to stop saving them.
+photos_album = "Portal Dash"
+
+# The Photos library that reference photos are picked from.
+library = "~/Pictures/Photos Library.photoslibrary"
+
+# What the three of you are doing. One is used per day; none repeats until all have
+# had a turn. Write each so it reads naturally after "It shows Alex, Sam and Biscuit: ".
+# Replace these with your own interests and memories.
+scenes = [
+  "hiking a foggy redwood trail",
+  "sharing a picnic by a lake on a sunny afternoon",
+  "on a coastal road trip with the windows down",
+  "cooking a big dinner together in a cozy kitchen",
+  "camping under the stars beside a campfire",
+  "exploring a bustling night market",
+]
+
+# Art styles, rotated the same way.
+styles = [
+  "Studio Ghibli-style hand-painted animation still",
+  "loose watercolor with ink linework",
+  "vintage 1960s travel poster with flat colors",
+  "Pixar-style 3D animated film still",
+  "impressionist oil painting with visible brushstrokes",
+  "woodblock print in the ukiyo-e tradition",
+]
+
+# name: used in the prompt. photos_name: exactly as named in Photos > People & Pets.
+# photos_person_id: optional; finds someone whose face Photos has grouped but nobody has
+#   named, by the group's id. Remove it once they are named in Photos.
+# description: optional extra detail to help likeness (e.g. "a tall man with glasses").
+[[subjects]]
+name = "Alex"
+photos_name = "Alex Example"
+# photos_person_id = "00000000-0000-0000-0000-000000000000"
+description = ""
+
+[[subjects]]
+name = "Sam"
+photos_name = "Sam Example"
+description = ""
+
+[[subjects]]
+name = "Biscuit"
+photos_name = "Biscuit"
+description = "their dog"
+
+[openai]
+model = "gpt-image-2.6-sunburst"
+size = "1536x1024"
+quality = "medium" # low, medium or high
+# OpenAI's rates in USD per million tokens, used to work out each picture's cost.
+price_input = 8.00
+price_output = 30.00
+
+[gemini]
+model = "gemini-nano-banana-2.1"
+image_size = "2K"

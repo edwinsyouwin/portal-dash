@@ -1,0 +1,359 @@
+:root {
+  --bg: #0b0d12;
+  --panel: #141821;
+  --text: #e8ebf0;
+  --muted: #8b93a3;
+  --accent: #f2b45a;
+  --rain: #6fb1ff;
+}
+
+* { box-sizing: border-box; }
+
+/* 1rem = 20px on the Portal+ (1920 CSS px wide); everything scales with the screen. */
+html { font-size: calc(100vw / 96); }
+
+body {
+  margin: 0;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, Roboto, sans-serif;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+.sprite { position: absolute; width: 0; height: 0; }
+
+main {
+  height: 100%;
+  padding: 3rem 4rem 2rem;
+  display: grid;
+  /* minmax(0, …) stops wide content from stretching the page past the screen. */
+  grid-template-columns: minmax(0, 1fr) auto;
+  /* The clock row takes the spare height; the rows below it size to their content. */
+  grid-template-rows: 1fr;
+  grid-auto-rows: auto;
+  align-items: center;
+  gap: 1.5rem 3rem;
+}
+
+/* Without a picture the weather block has no box of its own: its parts sit in main's grid. */
+.weather { display: contents; }
+.clock { grid-area: 1 / 1; }
+.now { grid-area: 1 / 2; text-align: right; }
+.now[hidden] { display: none; }
+.strip, .status, .agenda { grid-column: 1 / -1; }
+
+/* ---------- Agenda ---------- */
+
+.agenda {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 0.4rem 2.5rem;
+  padding: 1rem 1.5rem;
+  background: var(--panel);
+  border-radius: 1.2rem;
+}
+
+.agenda[hidden] { display: none; }
+
+.agenda h2 {
+  margin: 0 0 0.4rem;
+  font-size: 1.1rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.event {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.25rem 0;
+  font-size: 1.5rem;
+}
+
+.event .when { color: var(--muted); font-size: 1.3rem; }
+.event .title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.event.none { display: block; color: var(--muted); }
+.event .whos { display: flex; gap: 0.3rem; }
+
+.who {
+  width: 1.6rem;
+  height: 1.6rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #0b0d12;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-shadow: none;
+}
+
+.agenda .more { color: var(--muted); font-size: 1.1rem; }
+.agenda .more.stale { color: var(--accent); }
+
+/* Without a picture there is only room for a couple of events per day. */
+body:not(.has-photo) .day .event:nth-of-type(n + 3),
+body:not(.has-photo) .agenda .more { display: none; }
+
+.time {
+  font-size: 17rem;
+  font-weight: 200;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.ampm {
+  margin-left: 1rem;
+  font-size: 3.5rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+
+.date {
+  margin-top: 1rem;
+  font-size: 3.2rem;
+  font-weight: 300;
+  color: var(--muted);
+}
+
+.now-main {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1.5rem;
+}
+
+.now-temp { font-size: 9rem; font-weight: 200; line-height: 1; }
+.now-label { margin-top: 0.8rem; font-size: 2.6rem; }
+.now-detail { margin-top: 0.6rem; font-size: 1.6rem; color: var(--muted); }
+
+.icon {
+  width: 3rem;
+  height: 3rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.icon-xl { width: 8rem; height: 8rem; stroke-width: 2; color: var(--accent); }
+
+.strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 0.8rem;
+  padding: 1.2rem 1rem;
+  background: var(--panel);
+  border-radius: 1.2rem;
+}
+
+.strip:empty { display: none; }
+
+.cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.7rem;
+}
+
+.cell .when { color: var(--muted); font-size: 1.4rem; }
+.cell .rain { color: var(--rain); font-size: 1.2rem; min-height: 1.5rem; }
+.cell .lo { color: var(--muted); }
+.cell .range { display: flex; gap: 0.8rem; }
+
+.status {
+  text-align: right;
+  font-size: 1.1rem;
+  color: var(--muted);
+  min-height: 1.4rem;
+}
+
+.status.stale { color: var(--accent); }
+
+/* ---------- Over a picture ----------
+   The clock shrinks and the weather becomes a small frosted card. photo.js puts each in
+   whichever corner keeps clear of the people and animals in the picture (data-corner);
+   the agenda card goes directly under the weather. */
+
+.photo, .caption { display: none; }
+
+.has-photo .photo {
+  display: block;
+  position: fixed;
+  inset: 0;
+}
+
+.photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.has-photo { --muted: #d3d7df; }
+
+.has-photo main {
+  position: relative;
+  display: block;
+  padding: 0;
+}
+
+.has-photo .clock,
+.has-photo .weather,
+.has-photo .agenda { position: absolute; }
+
+.has-photo .agenda {
+  display: block;
+  width: 30rem;
+  padding: 1rem 1.4rem 1.1rem;
+  background: rgba(11, 13, 18, 0.3);
+  backdrop-filter: blur(0.8rem);
+  border-radius: 1.4rem;
+}
+
+.has-photo .agenda[hidden] { display: none; }
+.has-photo .day + .day { margin-top: 0.8rem; }
+.has-photo .agenda h2 { font-size: 0.95rem; }
+.has-photo .event { grid-template-columns: 5.2rem minmax(0, 1fr) auto; gap: 0.6rem; font-size: 1.25rem; }
+.has-photo .event .when { font-size: 1.05rem; }
+.has-photo .who { width: 1.4rem; height: 1.4rem; font-size: 0.85rem; }
+.has-photo .agenda .more { margin-top: 0.4rem; font-size: 0.95rem; }
+
+/* Keep these margins in step with EDGE_X / EDGE_Y in photo.js. */
+/* --shift (set by photo.js) moves the weather or agenda past the other in a shared corner. */
+[data-corner^="t"] { top: calc(2.5rem + var(--shift, 0px)); }
+[data-corner^="b"] { bottom: calc(2.5rem + var(--shift, 0px)); }
+[data-corner$="l"] { left: 3rem; }
+[data-corner$="r"] { right: 3rem; }
+
+.has-photo .clock { text-shadow: 0 0.1rem 0.8rem rgba(0, 0, 0, 0.75); }
+.has-photo .clock[data-corner$="r"] { text-align: right; }
+.has-photo .time { font-size: 9rem; font-weight: 300; }
+.has-photo .ampm { margin-left: 0.6rem; font-size: 2.4rem; color: var(--text); }
+.has-photo .date { margin-top: 0.4rem; font-size: 2.2rem; font-weight: 400; color: var(--text); }
+
+.has-photo .caption {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 1.2rem;
+  opacity: 0.85;
+}
+
+.caption::first-letter { text-transform: uppercase; }
+
+/* When the clock cannot avoid the subjects, draw the digits as outlines to see through them. */
+.has-photo .clock.outline .time {
+  color: transparent;
+  -webkit-text-stroke: 0.12rem rgba(255, 255, 255, 0.95);
+  text-shadow: none;
+}
+
+.has-photo .clock.outline .ampm {
+  -webkit-text-stroke: 0;
+  text-shadow: 0 0.1rem 0.8rem rgba(0, 0, 0, 0.75);
+}
+
+.has-photo .weather {
+  display: block;
+  width: 30rem;
+  padding: 1.1rem 1.4rem 1.2rem;
+  background: rgba(11, 13, 18, 0.3);
+  backdrop-filter: blur(0.8rem);
+  border-radius: 1.4rem;
+}
+
+/* Nothing to show until the first forecast arrives. */
+.has-photo .weather:has(.now[hidden]) { display: none; }
+
+.has-photo .now:not([hidden]) {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  text-align: left;
+}
+
+.has-photo .now-main { gap: 0.6rem; }
+.has-photo .now-temp { font-size: 3.2rem; font-weight: 300; }
+.has-photo .now-label { margin: 0; font-size: 1.4rem; }
+.has-photo .now-detail { display: none; }
+.has-photo .icon-xl { width: 3rem; height: 3rem; stroke-width: 2.5; color: var(--text); }
+
+.has-photo .strip {
+  margin-top: 0.9rem;
+  padding: 0.9rem 0 0;
+  gap: 0.3rem;
+  background: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0;
+}
+
+/* Room for six hours and five days. */
+.has-photo #hourly .cell:nth-child(n + 7),
+.has-photo #daily .cell:nth-child(n + 6) { display: none; }
+
+.has-photo .cell { gap: 0.25rem; font-size: 1.25rem; }
+.has-photo .cell .when { font-size: 1.05rem; }
+.has-photo .cell .icon { width: 2rem; height: 2rem; }
+.has-photo .cell .rain { font-size: 0.95rem; min-height: 1.15rem; }
+.has-photo .cell .range { gap: 0.4rem; }
+
+.has-photo .status { margin-top: 0.6rem; font-size: 0.9rem; min-height: 0; }
+.has-photo .status:not(.stale) { display: none; }
+
+/* Tap: the picture on its own. */
+.photo-mode main,
+.photo-mode .generate { visibility: hidden; }
+
+/* ---------- "New picture" button ---------- */
+
+.generate {
+  position: fixed;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.generate[hidden] { display: none; }
+.generate[data-corner$="r"] { flex-direction: row-reverse; }
+
+.generate button {
+  width: 3.6rem;
+  height: 3.6rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(11, 13, 18, 0.35);
+  backdrop-filter: blur(0.8rem);
+  color: var(--text);
+  opacity: 0.75;
+}
+
+.generate .icon { width: 1.9rem; height: 1.9rem; }
+.generate.busy button { opacity: 1; }
+.generate.busy .icon { animation: spin 1.4s linear infinite; }
+
+.generate-note {
+  padding: 0.5rem 0.9rem;
+  border-radius: 1rem;
+  background: rgba(11, 13, 18, 0.5);
+  backdrop-filter: blur(0.8rem);
+  font-size: 1.2rem;
+  max-width: 36rem;
+}
+
+.generate-note:empty { display: none; }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

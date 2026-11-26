@@ -1,0 +1,25 @@
+// Dashboard settings: copy to config.js, edit and redeploy (or just refresh when using the dev server).
+export default {
+  // Weather location.
+  location: { name: "San Francisco", latitude: 37.7749, longitude: -122.4194 },
+
+  units: "imperial", // "imperial" (°F, mph) or "metric" (°C, km/h)
+  hour12: true,
+
+  // Minutes between weather refreshes.
+  weatherRefreshMinutes: 15,
+
+  // The Mac's photoflow server (its LAN address; keep it fixed with a DHCP reservation).
+  // It supplies the daily picture and the calendar. Set to null to do without both.
+  server: "http://192.168.1.10:8766",
+
+  // Daily AI picture. Set to null to show only the dashboard.
+  photos: { pollMinutes: 10 },
+
+  // Google Calendar agenda: today plus this many following days. Set to null to hide it.
+  calendar: { pollMinutes: 5, daysAhead: 1 },
+
+  // Dim the screen overnight (only has an effect inside the Portal shell app).
+  // Set to null to leave brightness alone.
+  dim: { from: "22:00", to: "06:30", level: 0.05 },
+};
