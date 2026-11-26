@@ -1,5 +1,6 @@
 import config from "./config.js";
 import { startAgenda } from "./agenda.js";
+import { startControl } from "./control.js";
 import { startPhotos } from "./photo.js";
 import { startVoice } from "./voice.js";
 
@@ -236,3 +237,4 @@ refreshWeather();
 startPhotos();
 startAgenda();
 startVoice();
+startControl();

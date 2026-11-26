@@ -121,8 +121,10 @@ Talk to your [Muse](https://gadgets.muse.ai/) through the Portal's microphone, s
 and screen. It is built on Meta's Muse Gadget SDK, which is "not a supported product" and
 may stop working; read its [terms](https://gadgets.muse.ai/sdk-terms). The SDK is made
 for Linux gadgets: here the Mac runs it and holds the call, and the Portal lends its
-Bluetooth for pairing and its microphone, speakers and screen for calls. Nothing registers
-commands with Muse, so Muse cannot run anything on the Mac.
+Bluetooth for pairing and its microphone, speakers and screen for calls. The only commands
+registered with Muse change what the dashboard shows (below); the SDK's own commands,
+which run programs and read files, are never registered, so Muse cannot run anything on
+the Mac.
 
 Setup, with the Portal plugged in:
 
@@ -152,6 +154,19 @@ Using it:
 - Say "goodbye" and Muse hangs up; otherwise a call ends after 30 seconds of silence.
 - The Portal's own microphone switch must be on.
 
+Muse and the screen:
+
+- Muse is given four commands and no others: `dashboard.show` (enlarge the calendar or
+  the weather, show the picture alone, or go back), `dashboard.timer.start` and
+  `dashboard.timer.cancel` (a countdown on screen that chimes), and
+  `dashboard.picture.new`. The Mac checks every parameter, and the dashboard checks again.
+  Enlarged views go back by themselves after three minutes, or on a tap outside them.
+- Asked in text (the Muse app), Muse runs them within seconds. In a call it currently
+  says it will and never does, so `muse.py` also picks the plainest requests out of what
+  the caller said in a voice call ("set a ten minute timer for the pasta", "show the
+  calendar for the week", "how's the weather", "go back") and carries them out itself.
+  Video calls report no text, so there the screen cannot be changed by voice.
+
 What to know:
 
 - With `wakeWord` on, the Portal sends its microphone to the Mac all the time, unencrypted
@@ -162,6 +177,8 @@ What to know:
   the network cannot talk to your Muse through it. Anyone in the room can.
 - Calls only work while the Mac is awake and at the address in `config.js`.
 - Muse cannot be interrupted: the microphone is muted while it speaks.
+- Muse answers when it hears a pause. In a room with constant talk, music or TV it may
+  never answer; sound quieter than `MIC_THRESHOLD` in `muse.py` is treated as silence.
 - `MUSE_DEBUG=1 muse/muse.py serve` logs microphone levels and call events (never what
   was said).
 

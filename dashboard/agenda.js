@@ -221,6 +221,14 @@ async function refresh() {
   render();
 }
 
+/** Switches between the today, week and month views, as the card's own buttons do. */
+export function setAgendaView(name) {
+  if (!(name in VIEWS) || name === view) return;
+  view = name;
+  picked = null;
+  render();
+}
+
 export function startAgenda() {
   if (!config.server || !config.calendar) return;
   try {

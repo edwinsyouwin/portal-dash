@@ -3,6 +3,7 @@
 // (voice) or "Hey Jarvis" (video). The Portal sends its microphone, plays Muse's voice
 // and shows Muse's picture; the Mac holds the call and listens for the wake words.
 import config from "./config.js";
+import { handleCommand } from "./control.js";
 
 const SAMPLE_RATE = 24_000;
 // Start each run of speech this far ahead, to ride out uneven arrival over Wi-Fi.
@@ -71,14 +72,23 @@ function fail(message) {
 
 // ---------- Muse's voice ----------
 
-const speaking = () => context && context.currentTime < playhead + ECHO_TAIL_S;
+// A video call's sound never stops (there is faint noise between replies), so only
+// sound loud enough to be speech counts as Muse talking.
+const SPEECH_LEVEL = 300 / 0x8000;
+let speechEnds = 0;
+
+const speaking = () => context && context.currentTime < speechEnds + ECHO_TAIL_S;
 
 function play(buffer) {
   const samples = new Int16Array(buffer);
   if (!samples.length || !context) return;
   const audio = context.createBuffer(1, samples.length, SAMPLE_RATE);
   const channel = audio.getChannelData(0);
-  for (let i = 0; i < samples.length; i++) channel[i] = samples[i] / 0x8000;
+  let energy = 0;
+  for (let i = 0; i < samples.length; i++) {
+    channel[i] = samples[i] / 0x8000;
+    energy += channel[i] * channel[i];
+  }
   const source = context.createBufferSource();
   source.buffer = audio;
   source.connect(context.destination);
@@ -87,11 +97,15 @@ function play(buffer) {
   playhead = at + audio.duration;
   playing.add(source);
   source.onended = () => playing.delete(source);
+  if (Math.sqrt(energy / samples.length) < SPEECH_LEVEL) return;
+  speechEnds = playhead;
+  // A video call reports no words, so say that much.
+  if (videoCall) show("Muse is speaking…", "speaking");
   // Once Muse has finished talking, it is the caller's turn again.
   clearTimeout(listenTimer);
   listenTimer = setTimeout(
     () => inCall && show(LISTENING, "listening"),
-    (playhead - context.currentTime + ECHO_TAIL_S) * 1000,
+    (speechEnds - context.currentTime + ECHO_TAIL_S) * 1000,
   );
 }
 
@@ -99,6 +113,7 @@ function flush() {
   for (const source of playing) source.stop();
   playing.clear();
   playhead = 0;
+  speechEnds = 0;
 }
 
 /** A short rising tone: the wake word was heard. */
@@ -185,6 +200,7 @@ function onMessage({ data }) {
   else if (message.type === "words") show((words += message.text), "speaking");
   else if (message.type === "working" && message.working) show("Thinking…", "working");
   else if (message.type === "wake") button.classList.toggle("armed", message.armed);
+  else if (message.type === "command") handleCommand(message);
   else if (message.type === "state") {
     if (message.state === "connecting") {
       // Not asked for by a button, so it was a wake word.
@@ -219,7 +235,9 @@ async function open() {
   context = new AudioContext({ sampleRate: SAMPLE_RATE });
   await context.audioWorklet.addModule("voice-worklet.js");
   microphone = await navigator.mediaDevices.getUserMedia({
-    audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    // No automatic gain: with the microphone open for hours it turns the room's
+    // background up until Muse never hears a pause to answer in.
+    audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: false },
   });
   const frames = new AudioWorkletNode(context, "mic-frames", { numberOfOutputs: 0 });
   const gain = new GainNode(context, { gain: MIC_GAIN });

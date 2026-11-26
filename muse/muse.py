@@ -15,8 +15,12 @@
 
 The SDK is written for Linux, where it advertises over the machine's own Bluetooth. Here
 the Portal's radio does that instead (BleRelay in the shell app) and this Mac runs the
-pairing protocol. Nothing here registers commands with Muse, so Muse cannot run anything
-on this Mac. The pairing (device tokens) is kept in STATE_DIR, outside the repository.
+pairing protocol. The pairing (device tokens) is kept in STATE_DIR, outside the repository.
+
+`serve` registers this device with Muse with the commands in COMMANDS and no others: they
+change what the dashboard shows (calendar, weather, a timer, a new picture). The SDK's
+own commands, which run programs and read files, are never registered, so Muse cannot run
+anything on this Mac.
 
 For a call, the dashboard (voice.js) opens a WebSocket to `serve`, sends its microphone as
 24 kHz 16-bit mono PCM and plays the PCM that comes back; the SDK's VoiceCall does the rest.
@@ -30,10 +34,12 @@ neither with any other value.
 
 import argparse
 import asyncio
+import contextvars
 import hmac
 import json
 import logging
 import os
+import re
 import secrets
 import shutil
 import socket
@@ -42,6 +48,7 @@ import sys
 import threading
 import time
 import types
+import urllib.request
 from pathlib import Path
 
 import certifi
@@ -63,10 +70,69 @@ VIDEO_PHRASE = "Hey Jarvis"
 # First byte of each binary message to the dashboard: sound, or a video frame that is
 # (K) or is not (D) a keyframe, which a decoder needs to start from.
 AUDIO, KEYFRAME, DELTA = b"A", b"K", b"D"
+# Microphone sound quieter than this (RMS, of 32767) is sent to Muse as silence once
+# speech has stopped, so that Muse hears the pause and answers. Room noise at the Portal
+# measures 40 to 260; speech from across a room 1000 and up.
+MIC_THRESHOLD = 300
 # Video frames waiting for a slow dashboard beyond this are dropped until the next keyframe.
 MAX_QUEUED_MESSAGES = 100
 
 log = logging.getLogger("muse")
+
+# ---------- What Muse may do to the dashboard ----------
+
+VIEWS = ("home", "calendar", "weather", "picture")
+RANGES = ("today", "week", "month")
+MAX_TIMER_S = 24 * 3600
+MAX_LABEL_CHARS = 40
+PHOTO_SERVER = "http://127.0.0.1:8766"  # photoflow/flow.py serve, on this Mac
+
+# The commands registered with Muse, in the SDK's format. dashboard_command() checks every
+# parameter again before anything reaches the Portal.
+COMMANDS = {
+    "dashboard.show": {
+        "description": "Change what the Portal's screen shows: enlarge the calendar or the "
+                       "weather, show the picture alone, or go back to the normal dashboard.",
+        "required": {"view": {"type": "string", "description": "home, calendar, weather or picture"}},
+        "optional": {"range": {"type": "string",
+                               "description": "With calendar: today, week or month. Default: unchanged."}},
+        "timeout_ms": 5000,
+    },
+    "dashboard.timer.start": {
+        "description": "Show a countdown timer on the Portal's screen. It chimes when it ends. "
+                       "Starting another replaces it.",
+        "required": {"seconds": {"type": "integer", "description": "Length in seconds, 1 to 86400."}},
+        "optional": {"label": {"type": "string", "description": "A few words to show, such as Pasta."}},
+        "timeout_ms": 5000,
+    },
+    "dashboard.timer.cancel": {
+        "description": "Remove the timer from the Portal's screen.",
+        "timeout_ms": 5000,
+    },
+    "dashboard.picture.new": {
+        "description": "Make a new AI picture for the dashboard's background. Takes about half "
+                       "a minute, costs a few cents, and is limited to a few a day.",
+        "timeout_ms": 5000,
+    },
+}
+
+GUIDE = """# Portal dashboard
+
+A wall display in the owner's home: clock, weather, calendar and a daily AI picture of the
+household. You are usually talking with someone standing in front of it, by voice or video.
+
+Use the commands to show what you are talking about, without being asked each time:
+
+- `dashboard.show` with `calendar` when discussing plans or the schedule (`range`: `today`
+  lists today and tomorrow, `week` and `month` show a grid of days), `weather` for the
+  forecast, `picture` for the picture alone, and `home` when the topic moves on.
+- `dashboard.timer.start` when asked for a timer, with a short `label`. Say how long you set.
+- `dashboard.picture.new` only when asked for a new picture.
+
+The commands only change the screen. They cannot read the calendar or the weather: use
+your own tools for the facts. Enlarged views go back to normal by themselves after a few
+minutes.
+"""
 
 # The setup service the Muse app looks for (musegadget.ble_server, which needs Linux's
 # BlueZ and so cannot be imported here).
@@ -463,14 +529,17 @@ async def find_muse():
     return pairing, matches[0]
 
 
-async def voice_call(audio, tell, source=None, video=None, **options):
+async def voice_call(audio, tell, source=None, video=None, heard=None, **options):
     """One call from start to hang-up. Returns the SDK's reason for its end.
 
     `source` is where the caller's audio comes from when that is not the microphone
     directly: the wake-word listener, which has the words spoken since the wake queued.
     With `video` (a PortalVideo) it is a video call, which has Muse's picture but
-    reports no words or progress.
+    reports no words or progress. `heard` is called with each thing the caller says
+    (voice calls only).
     """
+    tap_caller_words()
+    _caller_words.set(heard)
     from musegadget import __version__, identity, server_hosts
     from musegadget import voice_call as vc
     from musegadget.link_client import DeviceDescription, LinkSession
@@ -499,17 +568,18 @@ async def voice_call(audio, tell, source=None, video=None, **options):
 
     stop = asyncio.Event()
     connection = asyncio.create_task(session.run(stop))
-    announce = None
+    announce = call = None
     try:
         await session.wait_transport_ready(vc.TRANSPORT_READY_TIMEOUT_S)
         if video is not None:
             from musegadget.video_call import VideoCall
 
             call = VideoCall(session, device_id=ident.node_id, video_output=video,
-                             idle_timeout=30, overall_timeout=600)
+                             mic_threshold=MIC_THRESHOLD, idle_timeout=30, overall_timeout=600)
         else:
-            call = vc.VoiceCall(session, device_id=ident.node_id, idle_timeout=30,
-                                overall_timeout=600, on_event=on_event, **options)
+            call = vc.VoiceCall(session, device_id=ident.node_id, mic_threshold=MIC_THRESHOLD,
+                                idle_timeout=30, overall_timeout=600, on_event=on_event,
+                                **options)
 
             async def when_ready():
                 await call.ready.wait()
@@ -518,6 +588,8 @@ async def voice_call(audio, tell, source=None, video=None, **options):
             announce = asyncio.create_task(when_ready())
         return await call.run(source or audio.frames(), audio, realtime_input=True)
     finally:
+        if video is not None and getattr(call, "media", None) is not None:
+            log.debug("video call: %s %s", call.summary(), call.media.stats)
         if announce is not None:
             announce.cancel()
         stop.set()
@@ -528,10 +600,207 @@ async def voice_call(audio, tell, source=None, video=None, **options):
             await asyncio.gather(connection, return_exceptions=True)
 
 
+# ---------- Screen requests heard in a call ----------
+#
+# In a call Muse says it will change the screen but, as of this SDK version, never sends
+# the command (it does when asked in text). Until it does, the plainest requests are
+# picked out of what the caller said, which the voice call reports as text, and carried
+# out here. Video calls report no text, so this covers voice calls only.
+
+_NUMBERS = {
+    "a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+    "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "fifteen": 15, "twenty": 20,
+    "thirty": 30, "forty": 40, "forty five": 45, "forty-five": 45, "fifty": 50, "sixty": 60,
+    "ninety": 90,
+}
+_UNITS = {"second": 1, "minute": 60, "hour": 3600}
+_DURATION = re.compile(
+    r"(\d+(?:\.\d+)?|" + "|".join(sorted(_NUMBERS, key=len, reverse=True)) + r")[\s-]*"
+    r"(and a half[\s-]*)?(second|minute|hour)s?")
+_LABEL = re.compile(r"\b(?:labell?ed|called|named|for(?: the| my)?)\s+([a-z][a-z' ]{0,38}[a-z])")
+_SHOW = re.compile(r"\b(show|pull up|bring up|put up|open|display|enlarge|zoom|see|look at|"
+                   r"what's|what is|how's|how is|switch to|go to)\b")
+_HOME = re.compile(r"\b(go (back|home)|back to (the )?(dashboard|home|normal)|close (that|it|this)|"
+                   r"hide (that|it|this)|(show|go to) (the )?(dashboard|home screen))\b")
+
+
+def spoken_commands(text):
+    """Dashboard messages for the screen requests in something the caller said."""
+    said = text.lower()
+    found = []
+    if "timer" in said:
+        if re.search(r"\b(cancel|stop|clear|remove|dismiss|delete)\b", said):
+            found.append({"name": "timer", "seconds": 0})
+        else:
+            seconds = 0
+            for amount, half, unit in _DURATION.findall(said):
+                number = _NUMBERS[amount] if amount in _NUMBERS else float(amount)
+                seconds += (number + (0.5 if half else 0)) * _UNITS[unit]
+            if 1 <= seconds <= MAX_TIMER_S:
+                label = _LABEL.search(_DURATION.sub("", said.replace(" please", "")))
+                label = label.group(1).strip() if label else ""
+                if "timer" in label:
+                    label = ""
+                found.append({"name": "timer", "seconds": int(seconds),
+                              "label": label[:MAX_LABEL_CHARS].capitalize()})
+    if _HOME.search(said):
+        found.append({"name": "show", "view": "home"})
+    elif _SHOW.search(said):
+        if re.search(r"\b(calendar|schedule|agenda)\b", said):
+            view = {"name": "show", "view": "calendar"}
+            for word, name in (("month", "month"), ("week", "week"), ("today", "today"), ("tomorrow", "today")):
+                if word in said:
+                    view["range"] = name
+                    break
+            found.append(view)
+        elif re.search(r"\b(weather|forecast)\b", said):
+            found.append({"name": "show", "view": "weather"})
+        elif re.search(r"\b(picture|photo)\b", said) and "new" not in said:
+            found.append({"name": "show", "view": "picture"})
+    return found
+
+
+# What to do with the caller's words in the call running in this context, if anything.
+_caller_words = contextvars.ContextVar("caller_words", default=None)
+
+
+def tap_caller_words():
+    """Have the SDK's voice call pass on the caller's words, which it reads but drops."""
+    from musegadget import voice_call as vc
+
+    original = vc.read_ndjson
+    if getattr(original, "tapped", False):
+        return
+
+    async def tapped(stream, *args, **kwargs):
+        async for event in original(stream, *args, **kwargs):
+            heard = _caller_words.get()
+            if (heard is not None and isinstance(event, dict)
+                    and event.get("type") == "conversation.item.input_audio_transcription.completed"
+                    and isinstance(event.get("transcript"), str)):
+                try:
+                    heard(event["transcript"])
+                except Exception as error:
+                    log.warning("screen request failed (%s)", type(error).__name__)
+            yield event
+
+    tapped.tapped = True
+    vc.read_ndjson = tapped
+
+
+def dashboard_command(name, params):
+    """Check a command from Muse and turn it into a message for the dashboard.
+
+    Raises ValueError, with a reason Muse can read, for anything outside COMMANDS.
+    """
+    params = params if isinstance(params, dict) else {}
+    if name == "dashboard.show":
+        view = params.get("view")
+        if view not in VIEWS:
+            raise ValueError(f"view must be one of: {', '.join(VIEWS)}")
+        message = {"name": "show", "view": view}
+        if params.get("range") is not None:
+            if view != "calendar" or params["range"] not in RANGES:
+                raise ValueError(f"range goes with calendar and is one of: {', '.join(RANGES)}")
+            message["range"] = params["range"]
+        return message
+    if name == "dashboard.timer.start":
+        seconds = params.get("seconds")
+        if type(seconds) is not int or not 1 <= seconds <= MAX_TIMER_S:
+            raise ValueError(f"seconds must be a whole number from 1 to {MAX_TIMER_S}")
+        label = params.get("label") or ""
+        if not isinstance(label, str):
+            raise ValueError("label must be text")
+        label = "".join(c for c in label if c.isprintable()).strip()[:MAX_LABEL_CHARS]
+        return {"name": "timer", "seconds": seconds, "label": label}
+    if name == "dashboard.timer.cancel":
+        return {"name": "timer", "seconds": 0}
+    raise ValueError("unsupported command")
+
+
+def new_picture():
+    """Ask the photo server on this Mac for another picture, as the dashboard's button does."""
+    request = urllib.request.Request(f"{PHOTO_SERVER}/generate", method="POST")
+    with urllib.request.urlopen(request, timeout=4) as response:
+        status = json.load(response)
+    if status.get("state") == "error":
+        raise ValueError(str(status.get("message") or "the picture could not be started"))
+
+
+class ControlLink:
+    """Keeps this device registered with Muse, and carries out the commands Muse sends."""
+
+    def __init__(self, loop):
+        self._loop = loop
+
+    def run_command(self, name, params, timeout_ms=None):
+        """Called by the SDK on a worker thread for each command."""
+        log.info("Muse ran %s", name if name in COMMANDS else "an unknown command")
+        try:
+            if name == "dashboard.picture.new":
+                new_picture()
+                return {"ok": True, "payload": {"started": True}}
+            message = dashboard_command(name, params)
+            reached = asyncio.run_coroutine_threadsafe(self._deliver(message), self._loop).result(3)
+        except ValueError as error:
+            return {"ok": False, "error": str(error)}
+        except Exception as error:
+            log.warning("command failed (%s)", type(error).__name__)
+            return {"ok": False, "error": "the dashboard could not do that"}
+        if not reached:
+            return {"ok": False, "error": "the Portal's dashboard is not connected"}
+        return {"ok": True, "payload": {"done": True}}
+
+    async def _deliver(self, message):
+        for dashboard in Dashboard.connected:
+            dashboard.tell(type="command", **message)
+        return len(Dashboard.connected)
+
+    async def run(self):
+        from musegadget import __version__, identity, server_hosts
+        from musegadget.link_client import DeviceDescription, LinkSession, Outcome
+
+        delay = 5
+        while True:
+            started = time.monotonic()
+            try:
+                pairing, vm = await find_muse()
+                session = LinkSession(
+                    noise_host=server_hosts.noise_host(pairing.get("noise_host")),
+                    vm_id=vm["vm_id"], vm_auth_token=vm["vm_auth_token"],
+                    device=DeviceDescription(
+                        identity.load_or_create().node_id, "Portal", __version__, COMMANDS,
+                        model_id="portal-dash", model_name="Portal dashboard", guide=GUIDE),
+                    run_command=self.run_command,
+                )
+                watch = asyncio.create_task(self._announce(session))
+                try:
+                    outcome = await session.run(asyncio.Event())
+                finally:
+                    watch.cancel()
+                log.info("Muse's command link closed (%s)", outcome.value)
+                if outcome is Outcome.UNPAIRED:
+                    log.warning("Muse removed this device; run `muse/muse.py pair --force`")
+                    delay = 600
+            except CallFailed as error:
+                log.info("no command link: %s", error)
+            except Exception as error:
+                log.warning("command link failed (%s)", type(error).__name__)
+            # Straight back after a long session; slower and slower while it keeps failing.
+            delay = 5 if time.monotonic() - started > 60 else min(delay * 2, 600)
+            await asyncio.sleep(delay)
+
+    @staticmethod
+    async def _announce(session):
+        await session.registered.wait()
+        log.info("registered with Muse: %s", ", ".join(COMMANDS))
+
+
 class Dashboard:
     """One dashboard's connection: its key, then calls by button or by wake word."""
 
     calling = False  # Muse holds one call at a time, whichever dashboard asks
+    connected = set()  # the dashboards that have presented the key
 
     def __init__(self, websocket, key):
         self._websocket = websocket
@@ -567,6 +836,7 @@ class Dashboard:
                 await websocket.send(await self._outbox.get())
 
         tasks = [asyncio.create_task(pump()), asyncio.create_task(self._converse())]
+        Dashboard.connected.add(self)
         try:
             async for message in websocket:
                 if isinstance(message, bytes):
@@ -585,6 +855,7 @@ class Dashboard:
         except Exception as error:
             log.info("dashboard connection ended (%s)", type(error).__name__)
         finally:
+            Dashboard.connected.discard(self)
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -671,7 +942,7 @@ class Dashboard:
                 self.tell(type="state", state="connecting", video=video)
                 picture = PortalVideo(self._outbox) if video else None
                 self._call = asyncio.create_task(
-                    voice_call(self._audio, self.tell, source, picture, **options))
+                    voice_call(self._audio, self.tell, source, picture, self._heard, **options))
                 try:
                     log.info("call ended: %s", await self._call)
                 except asyncio.CancelledError:
@@ -696,6 +967,13 @@ class Dashboard:
             self._call = None
             self._tap = None
             Dashboard.calling = False
+
+    def _heard(self, text):
+        """The caller said this: carry out any plain request about the screen."""
+        for message in spoken_commands(text):
+            log.info("heard a request for the screen: %s", message["name"])
+            for dashboard in Dashboard.connected:
+                dashboard.tell(type="command", **message)
 
     def _switch_call(self, video):
         """Carry the conversation on as a video call, or as a voice call."""
@@ -737,7 +1015,7 @@ def serve(args):
         async with websockets.serve(lambda ws: Dashboard(ws, key).serve(), "0.0.0.0", args.port,
                                     max_size=1 << 16):
             log.info("voice calls on port %d", args.port)
-            await asyncio.Future()
+            await ControlLink(asyncio.get_running_loop()).run()
 
     try:
         asyncio.run(run())
