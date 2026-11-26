@@ -855,6 +855,7 @@ class ChangeDesk:
             self._git("checkout", "--", "dashboard", check=False)
             self._git("clean", "-fdq", "--", "dashboard", check=False)
             reason = str(error) if isinstance(error, ValueError) else "something went wrong on the Mac"
+            log.info("reason: %s", reason[:120])
             result = {"state": "failed", "request": text, "summary": reason}
             log.warning("dashboard change not made (%s)", type(error).__name__)
         with self._lock:
@@ -881,6 +882,8 @@ class ChangeDesk:
         except (ValueError, KeyError, TypeError):
             summary, failed = "", True
         if failed:
+            log.warning("coding agent exit %s: %s", done.returncode,
+                        (summary or done.stderr.strip().splitlines()[-1:] or "no output"))
             raise ValueError("the coding agent could not finish")
 
         changed = [line[3:].strip('"') for line in self._git("status", "--porcelain").splitlines()]
