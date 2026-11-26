@@ -16,7 +16,10 @@ import android.text.TextUtils
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.Manifest
 import android.webkit.JavascriptInterface
+import android.webkit.PermissionRequest
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -40,6 +43,8 @@ class MainActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private val retryLoad = Runnable { webView.loadUrl(startUrl()) }
 
+    private val bleRelay by lazy { BleRelay(this) }
+
     private var cornerTaps = 0
     private var firstCornerTapAt = 0L
 
@@ -60,18 +65,21 @@ class MainActivity : Activity() {
             // The bundled dashboard is served over https but reads plain-http servers on the LAN.
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             webViewClient = ShellClient()
+            webChromeClient = MicrophoneClient()
             addJavascriptInterface(Bridge(), "PortalShell")
         }
         setContentView(webView)
 
         applyHomeExtra(intent)
         applyUrlExtra(intent)
+        applyPairExtra(intent)
         webView.loadUrl(startUrl())
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         applyHomeExtra(intent)
+        applyPairExtra(intent)
         if (applyUrlExtra(intent)) {
             handler.removeCallbacks(retryLoad)
             webView.loadUrl(startUrl())
@@ -85,6 +93,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         handler.removeCallbacks(retryLoad)
+        bleRelay.stop()
         webView.destroy()
         super.onDestroy()
     }
@@ -148,6 +157,15 @@ class MainActivity : Activity() {
         )
     }
 
+    /**
+     * Started with `--es pair host:port` by muse/muse.py: lets the Mac at that address use
+     * this device's Bluetooth to pair with the Muse app, until the Mac hangs up.
+     */
+    private fun applyPairExtra(intent: Intent?) {
+        val target = intent?.getStringExtra(EXTRA_PAIR)?.trim() ?: return
+        bleRelay.start(target)
+    }
+
     private fun startUrl(): String = prefs.getString(PREF_URL, null) ?: BUNDLED_URL
 
     private fun openSettings() {
@@ -209,6 +227,25 @@ class MainActivity : Activity() {
         }
     }
 
+    /** Lets the bundled dashboard (and the dev server) use the microphone, and nothing else. */
+    private inner class MicrophoneClient : WebChromeClient() {
+        override fun onPermissionRequest(request: PermissionRequest) {
+            val trusted = request.origin.host in MICROPHONE_HOSTS
+            val wantsMicrophone = PermissionRequest.RESOURCE_AUDIO_CAPTURE in request.resources
+            val granted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+            if (trusted && wantsMicrophone && granted) {
+                request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+            } else {
+                // scripts/install.sh grants RECORD_AUDIO; ask in case it was installed another way.
+                if (trusted && wantsMicrophone) {
+                    requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 0)
+                }
+                request.deny()
+            }
+        }
+    }
+
     /** Exposed to the page as `window.PortalShell`. */
     private inner class Bridge {
 
@@ -249,11 +286,13 @@ class MainActivity : Activity() {
     private companion object {
         const val EXTRA_URL = "url"
         const val EXTRA_HOME = "home"
+        const val EXTRA_PAIR = "pair"
         const val PREF_URL = "url"
 
         // Domain reserved by Google for apps serving their own assets to a WebView.
         const val ASSET_HOST = "appassets.androidplatform.net"
         const val BUNDLED_URL = "https://$ASSET_HOST/index.html"
+        val MICROPHONE_HOSTS = setOf(ASSET_HOST, "127.0.0.1", "localhost")
 
         const val RETRY_MS = 15_000L
         const val CORNER_DP = 96

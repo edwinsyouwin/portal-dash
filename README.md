@@ -1,12 +1,13 @@
 # portal-dash
 
 An always-on home dashboard for a Meta Portal+ (Gen 2, Android 10), installed over ADB:
-clock, weather, a Google Calendar agenda, and a daily AI-generated picture of your
-household behind it all.
+clock, weather, a Google Calendar agenda, voice and video calls to your Muse, and a daily
+AI-generated picture of your household behind it all.
 
 - `dashboard/` — the dashboard itself: plain HTML/CSS/JS, no build step.
 - `shell/` — a small Android app that shows it full-screen in a WebView.
 - `photoflow/` — optional Mac-side server: makes the daily picture and reads the calendars.
+- `muse/` — optional Mac-side server: voice and video calls to Muse, with wake words.
 
 The dashboard files are bundled into the app, so the clock and weather work without the
 Mac. Tested on one Portal+ Gen 2 only; this is a personal project, not affiliated with Meta.
@@ -113,6 +114,53 @@ The part after `CALENDAR_` is the label on that person's events. The Mac's serve
 (`photoflow/gcal.py`) reads the feeds and the dashboard asks it every few minutes; new
 lines in `.env` are picked up without a restart. Anyone with a secret address can read
 that calendar, and event titles are served unauthenticated on the home network.
+
+## Muse calls (`muse/`)
+
+Talk to your [Muse](https://gadgets.muse.ai/) through the Portal's microphone, speakers
+and screen. It is built on Meta's Muse Gadget SDK, which is "not a supported product" and
+may stop working; read its [terms](https://gadgets.muse.ai/sdk-terms). The SDK is made
+for Linux gadgets: here the Mac runs it and holds the call, and the Portal lends its
+Bluetooth for pairing and its microphone, speakers and screen for calls. Nothing registers
+commands with Muse, so Muse cannot run anything on the Mac.
+
+Setup, with the Portal plugged in:
+
+1. Get an SDK token at gadgets.muse.ai (Account > SDK tokens) and put it in `.env` as
+   `MUSE_SDK_TOKEN=mgst_...`.
+2. `muse/muse.py pair`, then in the Muse app: Settings > Devices > Developer mode on >
+   Add Device > the `MuseGadget...` name it prints. The Portal's Bluetooth carries the
+   handshake; the pairing (device tokens) is saved in `~/.config/portal-dash/muse`.
+3. Set `muse` in `dashboard/config.js` to `{ port: 8768, key: "...", wakeWord: true }`
+   with the key `muse/muse.py key` prints, and run `scripts/install.sh`, which also
+   grants the app the microphone.
+4. Optional wake words: `muse/build-wakeword.sh` builds the SDK's "Hey Muse" detector
+   for macOS; "Hey Jarvis" (openWakeWord) needs nothing. Video calls need libopus
+   (`brew install opus`).
+5. `muse/muse.py serve`, or `photoflow/install-schedule.sh` to keep it running.
+
+Using it:
+
+- The microphone button starts a voice call and the camera button a video call, which
+  shows Muse's picture full-screen. Tap again (or the picture) to hang up.
+- With `wakeWord` on, "Hey Muse" starts a voice call and "Hey Jarvis" a video call
+  (`MUSE_VIDEO_PHRASE` in `.env` changes which). A green ring on the microphone button
+  means the microphone is open.
+- Say "goodbye" and Muse hangs up; otherwise a call ends after 30 seconds of silence.
+- The Portal's own microphone switch must be on.
+
+What to know:
+
+- With `wakeWord` on, the Portal sends its microphone to the Mac all the time, unencrypted
+  on the home network. Only the detectors hear it, on the Mac, until a wake phrase; then
+  the call's audio goes to Muse. Both detectors make mistakes, and a false wake opens a
+  call ("Hey Jarvis" also answers to similar phrases).
+- The dashboard must present `key` before the Mac will start a call, so other devices on
+  the network cannot talk to your Muse through it. Anyone in the room can.
+- Calls only work while the Mac is awake and at the address in `config.js`.
+- Muse cannot be interrupted: the microphone is muted while it speaks.
+- `MUSE_DEBUG=1 muse/muse.py serve` logs microphone levels and call events (never what
+  was said).
 
 ## Shell app
 

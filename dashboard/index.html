@@ -44,6 +44,14 @@
       <symbol id="i-refresh" viewBox="0 0 48 48">
         <path d="M38 24a14 14 0 1 1-4.1-9.9M38 7v8h-8"/>
       </symbol>
+      <symbol id="i-video" viewBox="0 0 48 48">
+        <rect x="6" y="13" width="24" height="22" rx="5"/>
+        <path d="M30 21l11-6v18l-11-6z"/>
+      </symbol>
+      <symbol id="i-mic" viewBox="0 0 48 48">
+        <rect x="18" y="6" width="12" height="22" rx="6"/>
+        <path d="M11 23a13 13 0 0 0 26 0M24 36v7M17 43h14"/>
+      </symbol>
     </defs>
   </svg>
 
@@ -79,13 +87,26 @@
     </div>
   </main>
 
-  <!-- Asks the Mac for a new picture; shown when a photo server is configured. -->
+  <!-- Round buttons: a new picture from the Mac, and a voice call to Muse. Each shows
+       only when its feature is configured. -->
   <div class="generate" id="generate" data-corner="bl" hidden>
-    <button type="button" id="generate-button" aria-label="Create a new picture">
+    <button type="button" id="generate-button" aria-label="Create a new picture" hidden>
       <svg class="icon"><use href="#i-refresh"/></svg>
+    </button>
+    <button type="button" id="voice-button" aria-label="Talk to Muse" hidden>
+      <svg class="icon"><use href="#i-mic"/></svg>
+    </button>
+    <button type="button" id="video-button" aria-label="Video call with Muse" hidden>
+      <svg class="icon"><use href="#i-video"/></svg>
     </button>
     <span id="generate-note" class="generate-note"></span>
   </div>
+
+  <!-- Muse's picture during a video call, over the whole dashboard. Tap to hang up. -->
+  <div class="call-video" id="call-video" hidden><canvas id="call-canvas"></canvas></div>
+
+  <!-- What the call to Muse is doing, and what Muse is saying. Tap to hang up. -->
+  <div class="voice" id="voice" hidden><span class="voice-dot"></span><span id="voice-text"></span></div>
 
   <script type="module" src="app.js"></script>
 </body>

@@ -19,6 +19,11 @@ export default {
   // Google Calendar agenda: today plus this many following days. Set to null to hide it.
   calendar: { pollMinutes: 5, daysAhead: 1 },
 
+  // Voice calls to Muse through the Mac (muse/muse.py serve); `key` is what
+  // `muse/muse.py key` prints. wakeWord keeps the microphone open so that saying
+  // "Hey Muse" starts a call (needs muse/build-wakeword.sh). Set to null to hide the button.
+  muse: null, // { port: 8768, key: "…", wakeWord: false }
+
   // Dim the screen overnight (only has an effect inside the Portal shell app).
   // Set to null to leave brightness alone.
   dim: { from: "22:00", to: "06:30", level: 0.05 },

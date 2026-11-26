@@ -238,6 +238,7 @@ document.addEventListener("click", () => {
 export function startPhotos() {
   if (!config.server || !config.photos) return;
   generate.hidden = false;
+  document.getElementById("generate-button").hidden = false;
   const meta = readMeta();
   if (meta && "caches" in window) showCached(meta).catch(() => {});
   poll();

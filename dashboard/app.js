@@ -1,6 +1,7 @@
 import config from "./config.js";
 import { startAgenda } from "./agenda.js";
 import { startPhotos } from "./photo.js";
+import { startVoice } from "./voice.js";
 
 const $ = (id) => document.getElementById(id);
 const metric = config.units === "metric";
@@ -234,3 +235,4 @@ setInterval(tick, 1000);
 refreshWeather();
 startPhotos();
 startAgenda();
+startVoice();
