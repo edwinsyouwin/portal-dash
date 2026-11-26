@@ -15,7 +15,7 @@ import recurring_ical_events
 
 # GOOGLE_CALENDAR_<NAME> is accepted too; the longer prefix must come first.
 ENV_PREFIXES = ("GOOGLE_CALENDAR_", "CALENDAR_")
-DAYS_AHEAD = 31  # enough for the dashboard's month view
+DAYS_AHEAD = 42  # enough for the dashboard's month view
 CACHE_SECONDS = 300
 
 _lock = threading.Lock()
@@ -40,6 +40,12 @@ def local(moment):
 def events_in(ics_text, start, end):
     """Events between two dates, with repeating events expanded into their occurrences."""
     calendar = icalendar.Calendar.from_ical(ics_text)
+    # How often each repeating event repeats ("DAILY", "WEEKLY", ...), by UID.
+    repeats = {
+        str(event.get("UID", "")): str(event["RRULE"].get("FREQ", [""])[0]).upper()
+        for event in calendar.walk("VEVENT")
+        if "RRULE" in event
+    }
     for event in recurring_ical_events.of(calendar).between(start, end):
         if str(event.get("STATUS", "")).upper() == "CANCELLED":
             continue
@@ -54,6 +60,7 @@ def events_in(ics_text, start, end):
             "start": begin.isoformat() if all_day else local(begin),
             "end": finish.isoformat() if all_day else local(finish),
             "location": str(event.get("LOCATION", "")).strip(),
+            "repeats": repeats.get(str(event.get("UID", ""))),
         }
 
 

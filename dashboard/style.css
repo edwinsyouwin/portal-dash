@@ -83,6 +83,53 @@ main {
 
 .tabs button.on { background: rgba(255, 255, 255, 0.2); color: var(--text); }
 
+/* Week and month: a grid of days, the important ones filled in. */
+.agenda .grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.3rem;
+}
+
+.grid .head {
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.gday {
+  height: 2.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.6rem;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+  font: inherit;
+  font-size: 1.1rem;
+}
+
+.gday small { font-size: 0.75rem; text-transform: uppercase; }
+.gday.past { opacity: 0.35; }
+.gday.today { background: rgba(255, 255, 255, 0.3); font-weight: 600; }
+.gday.important { background: var(--accent); color: #0b0d12; font-weight: 600; text-shadow: none; }
+.gday.picked { box-shadow: 0 0 0 0.15rem var(--text); }
+
+/* The events of the highlighted or tapped day, on one line. */
+.agenda .detail {
+  display: flex;
+  align-items: baseline;
+  gap: 0.8rem;
+  margin-top: 0.8rem;
+  font-size: 1.25rem;
+}
+
+.detail .when { flex: none; color: var(--muted); font-size: 1.05rem; }
+.detail .title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.detail .none { color: var(--muted); }
+
 .agenda[hidden] { display: none; }
 
 .agenda h2 {
