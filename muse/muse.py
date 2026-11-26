@@ -4,6 +4,7 @@
 # dependencies = [
 #   "musegadget @ git+https://github.com/facebookincubator/muse-gadget-sdk@a5f809f621c4cbdbd37336fe17e7cdb74cebf3fe#subdirectory=linux",
 #   "certifi", "websockets>=15", "openwakeword>=0.6", "onnxruntime", "numpy",
+#   "faster-whisper>=1.1",
 # ]
 # ///
 """Muse voice for the Portal dashboard, built on Meta's Muse Gadget SDK (musegadget).
@@ -35,6 +36,9 @@ listen to it on this Mac, starting a call when either hears its phrase: the SDK'
 video call, in which Muse's picture is shown on the Portal as well (needs libopus:
 `brew install opus`). Said during a call, a phrase switches the call to its kind. MUSE_VIDEO_PHRASE in .env moves video to the other phrase, or to
 neither with any other value.
+
+Muse ends a voice call itself when told goodbye. It has no way to end a video call, so
+there this Mac listens for the goodbye (Farewell below) and hangs up.
 """
 
 import argparse
@@ -79,6 +83,11 @@ AUDIO, KEYFRAME, DELTA = b"A", b"K", b"D"
 # speech has stopped, so that Muse hears the pause and answers. Room noise at the Portal
 # measures 40 to 260; speech from across a room 1000 and up.
 MIC_THRESHOLD = 300
+# In a video call, any of these ends it when it is the last thing said, give or take a
+# name: "that's all, goodbye Jarvis", but not "I said goodbye to her at the airport".
+FAREWELL = re.compile(r"\b(good ?bye|bye bye|stop listening|hang up|end (the|this) call)( [a-z']+){0,2}$")
+FAREWELL_GRACE_S = 2.5  # time for Muse to say goodbye back
+SPEECH_MODEL = "base.en"  # Whisper, about 150 MB, fetched on first use
 # Video frames waiting for a slow dashboard beyond this are dropped until the next keyframe.
 MAX_QUEUED_MESSAGES = 100
 
@@ -426,6 +435,90 @@ class AnyWakeWord:
     def close(self):
         for detector in self._detectors:
             detector.close()
+
+
+class Farewell:
+    """Hears "goodbye" in a video call, which Muse cannot end itself as it does a voice call.
+
+    Each thing the caller says is put into words on this Mac (Whisper) and forgotten
+    unless it is a goodbye; neither the sound nor the words are kept or logged.
+    """
+
+    BYTES_PER_S = 16_000 * 2
+    LEAD = int(0.3 * BYTES_PER_S)  # kept from before the sound got loud: the first syllable
+    SHORTEST = int(0.3 * BYTES_PER_S)
+    LONGEST = 6 * BYTES_PER_S
+    PAUSE = int(0.6 * BYTES_PER_S)  # this much quiet ends what was being said
+
+    _model = None
+    _worker = None  # one thread, so the model is loaded once and used in turn
+
+    def __init__(self, on_goodbye):
+        from concurrent.futures import ThreadPoolExecutor
+
+        from musegadget.wakeword_input import Pcm24To16
+
+        if Farewell._worker is None:
+            Farewell._worker = ThreadPoolExecutor(1, thread_name_prefix="farewell")
+        self._on_goodbye = on_goodbye
+        self._resample = Pcm24To16()
+        self._lead = b""
+        self._speech = None  # what is being said, once it has started
+        self._quiet = 0
+        self._waiting = 0
+        self._loop = asyncio.get_running_loop()
+        self._submit(b"")  # have the model loaded by the time something is said
+
+    def feed(self, pcm):
+        """Microphone sound from the Portal (24 kHz), as it arrives."""
+        from musegadget.voice_call import pcm_rms
+
+        loud = pcm_rms(pcm) >= MIC_THRESHOLD
+        sound = self._resample.feed(pcm)
+        if self._speech is None:
+            self._lead = (self._lead + sound)[-self.LEAD:]
+            if loud:
+                self._speech, self._lead, self._quiet = bytearray(self._lead), b"", 0
+            return
+        self._speech += sound
+        self._quiet = 0 if loud else self._quiet + len(sound)
+        if self._quiet < self.PAUSE and len(self._speech) < self.LONGEST:
+            return
+        speech, self._speech = bytes(self._speech), None
+        # Far behind: the room is too noisy to keep up with, so skip some.
+        if len(speech) - self._quiet >= self.SHORTEST and self._waiting < 3:
+            self._submit(speech)
+
+    def _submit(self, speech):
+        self._waiting += 1
+        self._loop.run_in_executor(Farewell._worker, self._is_goodbye, speech).add_done_callback(self._done)
+
+    def _done(self, result):
+        self._waiting -= 1
+        if result.cancelled():
+            return
+        if result.exception() is not None:
+            log.warning("could not listen for goodbye (%s)", type(result.exception()).__name__)
+        elif result.result():
+            self._on_goodbye()
+
+    @classmethod
+    def _is_goodbye(cls, speech):
+        import numpy
+
+        if cls._model is None:
+            from faster_whisper import WhisperModel
+
+            cls._model = WhisperModel(SPEECH_MODEL, device="cpu", compute_type="int8")
+        if not speech:
+            return False
+        samples = numpy.frombuffer(speech, dtype=numpy.int16).astype(numpy.float32) / 0x8000
+        # The voice filter and the no-speech score keep room noise from being "heard" as words.
+        segments, _ = cls._model.transcribe(samples, language="en", beam_size=1, vad_filter=True,
+                                            condition_on_previous_text=False, without_timestamps=True)
+        said = " ".join(segment.text for segment in segments if segment.no_speech_prob < 0.6)
+        words = re.findall(r"[a-z']+", said.lower())
+        return bool(FAREWELL.search(" ".join(words)))
 
 
 class CallFailed(Exception):
@@ -1019,6 +1112,7 @@ class Dashboard:
         self._video = False  # the call under way is a video call
         self._switch = None  # ... and is to be replaced by one of this kind (True: video)
         self._tap = None  # resampler for the detectors while a call is up
+        self._farewell = None  # listens for "goodbye" while a video call is up
         self._detector = None
 
     def tell(self, **message):
@@ -1049,6 +1143,8 @@ class Dashboard:
                     self._audio.feed(message)
                     if self._call is not None:
                         self._hear_in_call(message)
+                        if self._farewell is not None:
+                            self._farewell.feed(message)
                     continue
                 request = json.loads(message)
                 if request.get("type") == "start" and self._call is not None:
@@ -1145,6 +1241,7 @@ class Dashboard:
             while True:
                 self._video, self._switch = video, None
                 self._listen_in()
+                self._farewell = self._listen_for_goodbye() if video else None
                 self.tell(type="state", state="connecting", video=video)
                 picture = PortalVideo(self._outbox) if video else None
                 self._call = asyncio.create_task(
@@ -1172,6 +1269,7 @@ class Dashboard:
         finally:
             self._call = None
             self._tap = None
+            self._farewell = None
             Dashboard.calling = False
 
     def _heard(self, text):
@@ -1197,6 +1295,22 @@ class Dashboard:
             fast = getattr(self._detector, "resampler", None)
             self._tap = fast() if fast else Pcm24To16()
 
+    def _listen_for_goodbye(self):
+        try:
+            return Farewell(self._goodbye)
+        except Exception as error:  # the call goes ahead; the picture or button still ends it
+            log.warning("cannot listen for goodbye (%s)", type(error).__name__)
+            return None
+
+    def _goodbye(self):
+        call = self._call
+        if call is None or not self._video:
+            return
+        log.info("heard goodbye in a video call")
+        self._farewell = None
+        asyncio.get_running_loop().call_later(
+            FAREWELL_GRACE_S, lambda: call.cancel() if call is self._call else None)
+
     def _hear_in_call(self, pcm):
         if self._tap is None or not self._detector.feed(self._tap.feed(pcm)):
             return
@@ -1211,6 +1325,7 @@ def serve(args):
         log.setLevel(logging.DEBUG)  # this script's own messages only
     # Its debug logs include the Authorization header.
     logging.getLogger("websockets").setLevel(logging.WARNING)
+    logging.getLogger("faster_whisper").setLevel(logging.WARNING)  # a line per thing said
     import websockets
     from musegadget import tls
 

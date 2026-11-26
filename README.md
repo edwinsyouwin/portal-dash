@@ -151,7 +151,10 @@ Using it:
 - With `wakeWord` on, "Hey Muse" starts a voice call and "Hey Jarvis" a video call
   (`MUSE_VIDEO_PHRASE` in `.env` changes which). A green ring on the microphone button
   means the microphone is open.
-- Say "goodbye" and Muse hangs up; otherwise a call ends after 30 seconds of silence.
+- Say "goodbye" and the call ends; otherwise it ends after 30 seconds of silence. Muse
+  hangs up a voice call itself. It cannot end a video call, so there the Mac listens for
+  "goodbye" (or "stop listening", "hang up") with a local speech model (Whisper, about
+  150 MB, fetched on first use) and hangs up; the sound and words stay on the Mac.
 - The Portal's own microphone switch must be on.
 
 Muse and the screen:
