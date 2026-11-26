@@ -1,6 +1,7 @@
 // What Muse may do to the screen during a conversation (muse/muse.py, COMMANDS): enlarge
 // the calendar or the weather, show the picture alone, and run a countdown timer. The
 // Mac has already checked each command; this checks again and ignores anything else.
+// The Mac also says when the dashboard's own files have changed, to load them afresh.
 import { setAgendaView } from "./agenda.js";
 
 const FOCUS_MS = 3 * 60_000; // enlarged views go back to normal by themselves
@@ -8,6 +9,8 @@ const DONE_MS = 2 * 60_000; // how long "Time's up" stays if nobody taps it
 const CHIME_EVERY_MS = 2_500;
 const CHIMES = 8;
 const TIMER_KEY = "timer";
+const NOTICE_KEY = "notice";
+const NOTICE_MS = 12_000;
 const FOCUSED = { calendar: "agenda", weather: "weather" };
 
 const body = document.body;
@@ -15,6 +18,33 @@ const timer = document.getElementById("timer");
 const timerLabel = document.getElementById("timer-label");
 const timerTime = document.getElementById("timer-time");
 const timerFill = document.getElementById("timer-fill");
+const noticeBox = document.getElementById("notice");
+
+// ---------- Notices ----------
+
+let noticeTimer = null;
+
+function notice(text, stay = false) {
+  clearTimeout(noticeTimer);
+  noticeBox.textContent = text;
+  noticeBox.hidden = false;
+  if (!stay) noticeTimer = setTimeout(() => (noticeBox.hidden = true), NOTICE_MS);
+}
+
+noticeBox.addEventListener("click", (event) => {
+  event.stopPropagation();
+  noticeBox.hidden = true;
+});
+
+/** Loads the dashboard's files again, carrying a notice across to show afterwards. */
+function reload(text) {
+  try {
+    if (text) sessionStorage.setItem(NOTICE_KEY, text);
+  } catch {
+    // The notice is lost; the reload matters more.
+  }
+  location.reload();
+}
 
 // ---------- Views ----------
 
@@ -133,6 +163,10 @@ timer.addEventListener("click", (event) => {
 export function handleCommand(command) {
   if (command.name === "show" && typeof command.view === "string") {
     show(command.view, command.range);
+  } else if (command.name === "notice" && typeof command.text === "string") {
+    notice(command.text.slice(0, 300), true);
+  } else if (command.name === "reload") {
+    reload(typeof command.notice === "string" ? command.notice.slice(0, 300) : "");
   } else if (command.name === "timer") {
     const seconds = Number(command.seconds);
     if (!(seconds > 0)) stopTimer();
@@ -144,6 +178,13 @@ export function handleCommand(command) {
 }
 
 export function startControl() {
+  try {
+    const carried = sessionStorage.getItem(NOTICE_KEY);
+    sessionStorage.removeItem(NOTICE_KEY);
+    if (carried) notice(carried);
+  } catch {
+    // No notice to show.
+  }
   // A timer that was running when the dashboard restarted carries on.
   try {
     const saved = JSON.parse(localStorage.getItem(TIMER_KEY));

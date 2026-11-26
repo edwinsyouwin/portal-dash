@@ -156,7 +156,7 @@ Using it:
 
 Muse and the screen:
 
-- Muse is given four commands and no others: `dashboard.show` (enlarge the calendar or
+- Muse is given these commands and no others: `dashboard.show` (enlarge the calendar or
   the weather, show the picture alone, or go back), `dashboard.timer.start` and
   `dashboard.timer.cancel` (a countdown on screen that chimes), and
   `dashboard.picture.new`. The Mac checks every parameter, and the dashboard checks again.
@@ -166,6 +166,28 @@ Muse and the screen:
   the caller said in a voice call ("set a ten minute timer for the pasta", "show the
   calendar for the week", "how's the weather", "go back") and carries them out itself.
   Video calls report no text, so there the screen cannot be changed by voice.
+
+Changing the dashboard by voice:
+
+- Tell Muse what you would like different ("make the clock smaller", "show the humidity
+  in the weather card"). Muse passes your words on with `dashboard.change.request`; a
+  coding agent on the Mac ([Claude Code](https://claude.com/claude-code), which must be
+  installed and signed in) makes the change, and the Portal reloads with it in a few
+  minutes. "Undo that" takes the last change back (`dashboard.change.undo`).
+- For this the Portal has to take its dashboard from the Mac: run `scripts/live.sh` once
+  with the cable in (`scripts/live.sh off` undoes it). The shell app then asks
+  photoflow's server for each dashboard file, accepts it only if it is signed with the key
+  in `~/.config/portal-dash/deploy_key`, and otherwise uses the copy in the app.
+  `dashboard/config.js` is never sent this way.
+- Guard rails, since the request is only someone's words relayed by an assistant: the
+  coding agent has file tools only (no shell, no connectors) and works inside
+  `dashboard/`; its change is thrown away if git shows anything touched outside
+  `dashboard/`, a script no longer parses, a new host is named, or it is very large.
+  Kept changes are committed to this repository on the Mac (subject `Voice change: ...`)
+  and never pushed, so `git log` shows each one. Ten a day, one at a time, and none while
+  the repository has uncommitted work.
+- Anyone who can talk to your Muse can ask for a change. The checks limit what a change
+  can do; they do not judge whether it is a good idea.
 
 What to know:
 
