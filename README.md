@@ -143,6 +143,9 @@ Using it:
 
 - The microphone button starts a voice call and the camera button a video call, which
   shows Muse's picture full-screen. Tap again (or the picture) to hang up.
+- During a call, the other button switches between voice and video, and so does saying
+  the other wake phrase. The switch ends one call and starts the other, which takes a
+  couple of seconds; Muse keeps the conversation.
 - With `wakeWord` on, "Hey Muse" starts a voice call and "Hey Jarvis" a video call
   (`MUSE_VIDEO_PHRASE` in `.env` changes which). A green ring on the microphone button
   means the microphone is open.

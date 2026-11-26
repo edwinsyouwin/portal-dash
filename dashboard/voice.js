@@ -34,6 +34,7 @@ let context = null;
 let microphone = null;
 let playhead = 0;
 let inCall = false;
+let videoCall = false; // the call under way has Muse's picture
 let words = "";
 let hideTimer = null;
 let listenTimer = null;
@@ -49,12 +50,18 @@ function show(message, state) {
   text.textContent = message;
   panel.dataset.state = state;
   panel.hidden = false;
-  button.classList.toggle("on", state !== "error");
+  mark();
 }
 
 function hide() {
   panel.hidden = true;
-  button.classList.remove("on");
+  mark();
+}
+
+/** Lights the button of the kind of call under way. */
+function mark() {
+  button.classList.toggle("on", inCall && !videoCall);
+  videoButton.classList.toggle("on", inCall && videoCall);
 }
 
 function fail(message) {
@@ -180,10 +187,15 @@ function onMessage({ data }) {
   else if (message.type === "wake") button.classList.toggle("armed", message.armed);
   else if (message.type === "state") {
     if (message.state === "connecting") {
-      // Not asked for by the button, so it was the wake word.
+      // Not asked for by a button, so it was a wake word.
       if (!inCall) chime();
+      // Also sent when a call changes between voice and video.
+      const switching = inCall && message.video !== videoCall;
       inCall = true;
-      show("Calling Muse…", "connecting");
+      videoCall = Boolean(message.video);
+      if (!videoCall) stopVideo();
+      flush();
+      show(switching ? (videoCall ? "Switching to video…" : "Switching to voice…") : "Calling Muse…", "connecting");
     } else if (message.state === "listening") {
       show(LISTENING, "listening");
     } else {
@@ -194,6 +206,7 @@ function onMessage({ data }) {
 
 function callEnded(error) {
   inCall = false;
+  videoCall = false;
   clearTimeout(listenTimer);
   stopVideo();
   if (error) fail(error);
@@ -230,6 +243,7 @@ async function open() {
   opened.onclose = ({ code }) => {
     const wasInCall = inCall;
     inCall = false;
+    videoCall = false;
     stopVideo();
     close();
     if (code === 4401) fail("The Mac refused this dashboard's key");
@@ -276,19 +290,28 @@ async function connect() {
 async function toggle(event) {
   // Keep the tap from also toggling the picture-only view.
   event.stopPropagation();
+  const pressed = event.currentTarget;
+  const wantsVideo = pressed === videoButton;
   if (inCall) {
-    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "stop" }));
+    const connected = socket?.readyState === WebSocket.OPEN;
+    // The other kind's button changes the call; anything else hangs up.
+    if ((pressed === button || pressed === videoButton) && wantsVideo !== videoCall) {
+      if (connected) socket.send(JSON.stringify({ type: "start", video: wantsVideo }));
+      return;
+    }
+    if (connected) socket.send(JSON.stringify({ type: "stop" }));
     callEnded();
     return;
   }
   inCall = true;
+  videoCall = wantsVideo;
   show("Calling Muse…", "connecting");
   try {
     if (!socket) {
       clearTimeout(retryTimer);
       await open();
     }
-    socket.send(JSON.stringify({ type: "start", video: event.currentTarget === videoButton }));
+    socket.send(JSON.stringify({ type: "start", video: wantsVideo }));
   } catch (error) {
     console.warn("Voice call failed to start:", error);
     inCall = false;

@@ -24,7 +24,7 @@ With the wake word on, the dashboard sends its microphone all the time and two d
 listen to it on this Mac, starting a call when either hears its phrase: the SDK's
 "Hey Muse" (build-wakeword.sh) for a voice call and openWakeWord's "Hey Jarvis" for a
 video call, in which Muse's picture is shown on the Portal as well (needs libopus:
-`brew install opus`). MUSE_VIDEO_PHRASE in .env moves video to the other phrase, or to
+`brew install opus`). Said during a call, a phrase switches the call to its kind. MUSE_VIDEO_PHRASE in .env moves video to the other phrase, or to
 neither with any other value.
 """
 
@@ -388,6 +388,10 @@ class PortalAudio:
         pass
 
 
+def video_phrase():
+    return os.environ.get("MUSE_VIDEO_PHRASE", VIDEO_PHRASE)
+
+
 class PortalVideo:
     """A video call's picture: H.264 frames, decoded and shown by the dashboard."""
 
@@ -537,6 +541,9 @@ class Dashboard:
         self._button = asyncio.Event()  # a button asked for a call
         self._button_video = False  # ... and it was the video button
         self._call = None
+        self._video = False  # the call under way is a video call
+        self._switch = None  # ... and is to be replaced by one of this kind (True: video)
+        self._tap = None  # resampler for the detectors while a call is up
         self._detector = None
 
     def tell(self, **message):
@@ -564,9 +571,13 @@ class Dashboard:
             async for message in websocket:
                 if isinstance(message, bytes):
                     self._audio.feed(message)
+                    if self._call is not None:
+                        self._hear_in_call(message)
                     continue
                 request = json.loads(message)
-                if request.get("type") == "start":
+                if request.get("type") == "start" and self._call is not None:
+                    self._switch_call(bool(request.get("video")))
+                elif request.get("type") == "start":
                     self._button_video = bool(request.get("video"))
                     self._button.set()
                 elif request.get("type") == "stop" and self._call is not None:
@@ -624,7 +635,7 @@ class Dashboard:
                 self._button.clear()
                 if woke:
                     log.info("heard %s", self._detector.heard)
-                    if self._detector.heard == os.environ.get("MUSE_VIDEO_PHRASE", VIDEO_PHRASE):
+                    if self._detector.heard == video_phrase():
                         await self._hold(listener, video=True)
                     else:
                         # A false wake opens a call too: end it if no speech follows the wake word.
@@ -647,33 +658,66 @@ class Dashboard:
                     await asyncio.shield(listener.aclose())
 
     async def _hold(self, source, video=False, **options):
-        """One call, reported to the dashboard; ends by itself or when `_call` is cancelled."""
+        """A conversation, reported to the dashboard: one call, or several end to end when
+        it is switched between voice and video. Ends by itself or when `_call` is cancelled."""
         if Dashboard.calling:
             self.tell(type="state", state="error", message="Muse is already on a call")
             return
         Dashboard.calling = True
-        self.tell(type="state", state="connecting", video=video)
-        picture = PortalVideo(self._outbox) if video else None
-        self._call = asyncio.create_task(
-            voice_call(self._audio, self.tell, source, picture, **options))
         try:
-            reason = await self._call
-            log.info("call ended: %s", reason)
-            self.tell(type="state", state="idle")
-        except asyncio.CancelledError:
-            if asyncio.current_task().cancelling():
-                raise  # the dashboard went away
-            log.info("call hung up")
+            while True:
+                self._video, self._switch = video, None
+                self._listen_in()
+                self.tell(type="state", state="connecting", video=video)
+                picture = PortalVideo(self._outbox) if video else None
+                self._call = asyncio.create_task(
+                    voice_call(self._audio, self.tell, source, picture, **options))
+                try:
+                    log.info("call ended: %s", await self._call)
+                except asyncio.CancelledError:
+                    if asyncio.current_task().cancelling():
+                        raise  # the dashboard went away
+                    log.info("call hung up" if self._switch is None else "call switching")
+                if self._switch is None:
+                    break
+                # The other kind of call takes over; Muse keeps the conversation.
+                video, source, options = self._switch, None, {}
+                self._audio.clear()
             self.tell(type="state", state="idle")
         except CallFailed as error:
             self.tell(type="state", state="error", message=str(error))
+        except asyncio.CancelledError:
+            raise
         except Exception as error:
             # Errors from the network libraries can echo credentials; log only the kind.
             log.warning("call failed (%s)", type(error).__name__)
             self.tell(type="state", state="error", message="The call to Muse failed")
         finally:
             self._call = None
+            self._tap = None
             Dashboard.calling = False
+
+    def _switch_call(self, video):
+        """Carry the conversation on as a video call, or as a voice call."""
+        if self._call is not None and video != self._video and self._switch is None:
+            self._switch = video
+            self._call.cancel()
+
+    def _listen_in(self):
+        """During a call the wake phrases switch its kind: start their detectors afresh."""
+        self._tap = None
+        if self._detector is not None:
+            from musegadget.wakeword_input import Pcm24To16
+
+            self._detector.reset()
+            fast = getattr(self._detector, "resampler", None)
+            self._tap = fast() if fast else Pcm24To16()
+
+    def _hear_in_call(self, pcm):
+        if self._tap is None or not self._detector.feed(self._tap.feed(pcm)):
+            return
+        log.info("heard %s during a call", self._detector.heard)
+        self._switch_call(self._detector.heard == video_phrase())
 
 
 def serve(args):
