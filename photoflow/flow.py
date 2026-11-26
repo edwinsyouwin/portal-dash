@@ -10,7 +10,8 @@
 
   flow.py run     pick reference photos, generate today's picture, publish it to out/
   flow.py people  list the people named in the Photos library
-  flow.py serve   serve out/ and the calendar (gcal.py) to the Portal over the home network
+  flow.py serve   serve out/ and the calendar (gcal.py) to the Portal over the home network,
+                  and the dashboard's own files, signed, for updates without the USB cable
 
 Who is in the pictures, what they do and in which styles is set in profile.toml.
 """
@@ -19,9 +20,12 @@ import argparse
 import base64
 import csv
 import datetime as dt
+import hashlib
+import hmac
 import json
 import os
 import random
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -46,6 +50,13 @@ REFERENCE_MAX_PX = 1536  # long edge of the reference photos sent to the model
 REFERENCE_MIN_PX = 1024  # library copies smaller than this are only thumbnails
 CANDIDATE_POOL = 20  # pick at random among this many best-scored library photos
 PORT = 8766
+
+# Live dashboard updates: the shell app asks for /dashboard/<file> and only uses an answer
+# signed with this key, which scripts/live.sh gives it over USB.
+DASHBOARD = ROOT.parent / "dashboard"
+DEPLOY_KEY = Path("~/.config/portal-dash/deploy_key").expanduser()
+# Never served: it holds this household's settings and the key for Muse calls.
+PRIVATE_FILES = {"config.js"}
 
 
 # ---------- Reference photos ----------
@@ -596,8 +607,33 @@ class Generator:
                 self.state, self.message = "error", (lines[-1] if lines else "Generation failed")[:300]
 
 
+def deploy_key():
+    """The key that signs dashboard files for the Portal, made on first use."""
+    if not DEPLOY_KEY.exists():
+        DEPLOY_KEY.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        DEPLOY_KEY.touch(mode=0o600)
+        DEPLOY_KEY.write_text(secrets.token_hex(32))
+    return DEPLOY_KEY.read_text().strip()
+
+
 class Handler(SimpleHTTPRequestHandler):
     generator = None  # set by serve()
+
+    def send_dashboard_file(self, name):
+        """One of the dashboard's files, with a signature over its name and contents."""
+        path = DASHBOARD / name
+        # Plain file names only: nothing outside dashboard/, and not the private settings.
+        if "/" in name or name.startswith(".") or name in PRIVATE_FILES or not path.is_file():
+            self.send_error(404)
+            return
+        body = path.read_bytes()
+        signature = hmac.new(deploy_key().encode(), name.encode() + b"\n" + body, hashlib.sha256)
+        self.send_response(200)
+        self.send_header("Content-Type", self.guess_type(str(path)))
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("X-Signature", signature.hexdigest())
+        self.end_headers()
+        self.wfile.write(body)
 
     def end_headers(self):
         # The dashboard runs on a different origin and caches pictures itself.
@@ -622,6 +658,8 @@ class Handler(SimpleHTTPRequestHandler):
 
             # Read on every request, so calendars added to .env show up without a restart.
             self.send_json(200, gcal.upcoming(gcal.feeds_from(read_env())))
+        elif path.startswith("/dashboard/"):
+            self.send_dashboard_file(path.removeprefix("/dashboard/"))
         else:
             super().do_GET()
 

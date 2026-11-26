@@ -26,7 +26,13 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import java.io.ByteArrayInputStream
 import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.MessageDigest
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 
 /**
  * Full-screen WebView that shows the dashboard.
@@ -34,6 +40,10 @@ import java.io.IOException
  * By default it serves the files bundled in the APK. A different URL can be set with
  *   adb shell am start -n com.portaldash.shell/.MainActivity --es url http://host:port/
  * and cleared again with `--es url default`. The choice is remembered across restarts.
+ *
+ * With `--es live http://host:port/dashboard/ --es livekey KEY` (scripts/live.sh) each
+ * bundled file is first asked for there and used if it is signed with KEY, so the
+ * dashboard can be updated over Wi-Fi; `--es live off` goes back to the bundled files.
  */
 class MainActivity : Activity() {
 
@@ -44,6 +54,10 @@ class MainActivity : Activity() {
     private val retryLoad = Runnable { webView.loadUrl(startUrl()) }
 
     private val bleRelay by lazy { BleRelay(this) }
+
+    // While the live server does not answer, bundled files are used without asking again.
+    @Volatile
+    private var liveDownUntil = 0L
 
     private var cornerTaps = 0
     private var firstCornerTapAt = 0L
@@ -73,6 +87,7 @@ class MainActivity : Activity() {
         applyHomeExtra(intent)
         applyUrlExtra(intent)
         applyPairExtra(intent)
+        applyLiveExtra(intent)
         webView.loadUrl(startUrl())
     }
 
@@ -80,7 +95,7 @@ class MainActivity : Activity() {
         super.onNewIntent(intent)
         applyHomeExtra(intent)
         applyPairExtra(intent)
-        if (applyUrlExtra(intent)) {
+        if (applyLiveExtra(intent) or applyUrlExtra(intent)) {
             handler.removeCallbacks(retryLoad)
             webView.loadUrl(startUrl())
         }
@@ -166,6 +181,53 @@ class MainActivity : Activity() {
         bleRelay.start(target)
     }
 
+    /** Stores or clears the live-update server carried by [intent]; returns true if it had one. */
+    private fun applyLiveExtra(intent: Intent?): Boolean {
+        val live = intent?.getStringExtra(EXTRA_LIVE)?.trim() ?: return false
+        val key = intent.getStringExtra(EXTRA_LIVE_KEY)?.trim().orEmpty()
+        if (live.startsWith("http://") && live.endsWith("/") && key.isNotEmpty()) {
+            prefs.edit().putString(PREF_LIVE, live).putString(PREF_LIVE_KEY, key).apply()
+        } else {
+            prefs.edit().remove(PREF_LIVE).remove(PREF_LIVE_KEY).apply()
+        }
+        liveDownUntil = 0
+        return true
+    }
+
+    /**
+     * The live server's copy of a dashboard file, or null to use the bundled one: when no
+     * server is set, it does not answer, it lacks the file, or the signature is wrong.
+     */
+    private fun liveFile(path: String): ByteArray? {
+        val live = prefs.getString(PREF_LIVE, null) ?: return null
+        val key = prefs.getString(PREF_LIVE_KEY, null) ?: return null
+        // The household's settings always come from the APK; subfolders are not served.
+        if (path == "config.js" || path.contains('/')) return null
+        if (System.currentTimeMillis() < liveDownUntil) return null
+        return try {
+            val connection = URL(live + path).openConnection() as HttpURLConnection
+            connection.connectTimeout = LIVE_TIMEOUT_MS
+            connection.readTimeout = LIVE_TIMEOUT_MS
+            connection.useCaches = false
+            try {
+                if (connection.responseCode != 200) return null
+                val body = connection.inputStream.use { it.readBytes() }
+                val mac = Mac.getInstance("HmacSHA256")
+                mac.init(SecretKeySpec(key.toByteArray(), "HmacSHA256"))
+                mac.update(path.toByteArray())
+                mac.update('\n'.code.toByte())
+                val expected = mac.doFinal(body).joinToString("") { "%02x".format(it) }
+                val given = connection.getHeaderField("X-Signature").orEmpty()
+                if (MessageDigest.isEqual(expected.toByteArray(), given.toByteArray())) body else null
+            } finally {
+                connection.disconnect()
+            }
+        } catch (e: IOException) {
+            liveDownUntil = System.currentTimeMillis() + LIVE_RETRY_MS
+            null
+        }
+    }
+
     private fun startUrl(): String = prefs.getString(PREF_URL, null) ?: BUNDLED_URL
 
     private fun openSettings() {
@@ -197,6 +259,12 @@ class MainActivity : Activity() {
             val url = request.url
             if (url.host != ASSET_HOST) return null
             val path = url.path.orEmpty().trimStart('/').ifEmpty { "index.html" }
+            liveFile(path)?.let {
+                return WebResourceResponse(
+                    mimeType(path), null, 200, "OK",
+                    mapOf("Cache-Control" to "no-store"), ByteArrayInputStream(it),
+                )
+            }
             return try {
                 WebResourceResponse(mimeType(path), null, assets.open(path))
             } catch (e: IOException) {
@@ -287,6 +355,12 @@ class MainActivity : Activity() {
         const val EXTRA_URL = "url"
         const val EXTRA_HOME = "home"
         const val EXTRA_PAIR = "pair"
+        const val EXTRA_LIVE = "live"
+        const val EXTRA_LIVE_KEY = "livekey"
+        const val PREF_LIVE = "live"
+        const val PREF_LIVE_KEY = "live_key"
+        const val LIVE_TIMEOUT_MS = 2_000
+        const val LIVE_RETRY_MS = 60_000L
         const val PREF_URL = "url"
 
         // Domain reserved by Google for apps serving their own assets to a WebView.
