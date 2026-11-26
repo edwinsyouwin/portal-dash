@@ -121,10 +121,10 @@ function render() {
 
 // Today / Week / Month buttons; the choice is remembered.
 element.addEventListener("click", (event) => {
+  // Taps on the card should not also toggle the picture-only view.
+  event.stopPropagation();
   const button = event.target.closest("[data-view]");
   if (!button) return;
-  // Keep the tap from also toggling the picture-only view.
-  event.stopPropagation();
   view = button.dataset.view;
   element.querySelector(".days").scrollTop = 0;
   try {
