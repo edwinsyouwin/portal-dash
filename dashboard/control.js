@@ -3,6 +3,7 @@
 // Mac has already checked each command; this checks again and ignores anything else.
 // The Mac also says when the dashboard's own files have changed, to load them afresh.
 import { setAgendaView } from "./agenda.js";
+import config from "./config.js";
 
 const FOCUS_MS = 3 * 60_000; // enlarged views go back to normal by themselves
 const DONE_MS = 2 * 60_000; // how long "Time's up" stays if nobody taps it
@@ -17,6 +18,7 @@ const body = document.body;
 const timer = document.getElementById("timer");
 const timerLabel = document.getElementById("timer-label");
 const timerTime = document.getElementById("timer-time");
+const timerEnds = document.getElementById("timer-ends");
 const timerFill = document.getElementById("timer-fill");
 const noticeBox = document.getElementById("notice");
 
@@ -82,6 +84,12 @@ let chimer = null;
 
 const two = (n) => String(n).padStart(2, "0");
 
+const endFormat = new Intl.DateTimeFormat("en-US", {
+  hour: "numeric",
+  minute: "2-digit",
+  hour12: config.hour12,
+});
+
 function clock(ms) {
   const seconds = Math.ceil(ms / 1000);
   const hours = Math.floor(seconds / 3600);
@@ -125,6 +133,7 @@ function finish() {
   clearInterval(ticker);
   timer.classList.add("done");
   timerTime.textContent = "Time's up";
+  timerEnds.textContent = "";
   timerFill.style.width = "100%";
   let chimes = 0;
   chime();
@@ -147,6 +156,7 @@ function startTimer(state) {
   running = state;
   remember(state);
   timerLabel.textContent = state.label;
+  timerEnds.textContent = `ends ${endFormat.format(state.end)}`;
   timer.hidden = false;
   tick();
   if (running) ticker = setInterval(tick, 250);
