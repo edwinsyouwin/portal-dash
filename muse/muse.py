@@ -886,7 +886,9 @@ class ChangeDesk:
                         (summary or done.stderr.strip().splitlines()[-1:] or "no output"))
             raise ValueError("the coding agent could not finish")
 
-        changed = [line[3:].strip('"') for line in self._git("status", "--porcelain").splitlines()]
+        # "XY path" lines; _git strips the first line's leading space, so split, don't slice.
+        changed = [line.split(maxsplit=1)[1].strip('"')
+                   for line in self._git("status", "--porcelain").splitlines()]
         if not changed:
             raise ValueError(summary or "nothing needed changing")
         if any(not path.startswith("dashboard/") or path.count("/") > 1 for path in changed):
