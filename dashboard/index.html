@@ -55,6 +55,10 @@
       <symbol id="i-shrink" viewBox="0 0 48 48">
         <path d="M18 8v10H8M40 18H30V8M30 40V30h10M8 30h10v10"/>
       </symbol>
+      <symbol id="i-camera" viewBox="0 0 48 48">
+        <path d="M6 16a4 4 0 0 1 4-4h6l3-5h10l3 5h6a4 4 0 0 1 4 4v19a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z"/>
+        <circle cx="24" cy="25" r="8"/>
+      </symbol>
       <symbol id="i-settings" viewBox="0 0 48 48">
         <path d="M7 13h13M30 13h11M7 24h4M21 24h20M7 35h18M35 35h6"/>
         <circle cx="25" cy="13" r="5"/>
@@ -124,6 +128,9 @@
     <button type="button" id="generate-button" aria-label="Create a new picture" hidden>
       <svg class="icon"><use href="#i-create"/></svg>
     </button>
+    <button type="button" id="camera-button" aria-label="Take a photo to turn into a picture" hidden>
+      <svg class="icon"><use href="#i-camera"/></svg>
+    </button>
     <button type="button" id="voice-button" aria-label="Talk to Muse" hidden>
       <svg class="icon"><use href="#i-mic"/></svg>
     </button>
@@ -137,6 +144,20 @@
       <svg class="icon"><use href="#i-settings"/></svg>
     </button>
     <span id="generate-note" class="generate-note"></span>
+  </div>
+
+  <!-- Snapshot (snapshot.js): the camera, to take a photo for the Mac to redraw. -->
+  <div class="camera" id="camera" hidden>
+    <video id="camera-view" autoplay playsinline muted></video>
+    <img id="camera-still" alt="" hidden>
+    <span id="camera-count"></span>
+    <span id="camera-hint"></span>
+    <div class="camera-bar">
+      <button type="button" id="camera-again" hidden>Take another</button>
+      <button type="button" id="camera-take" aria-label="Take the photo"></button>
+      <button type="button" id="camera-use" hidden>Make the picture</button>
+    </div>
+    <button type="button" id="camera-close" aria-label="Close the camera">×</button>
   </div>
 
   <!-- YouTube (youtube.js): a search panel opened by its button, and the player. -->

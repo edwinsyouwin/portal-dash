@@ -10,8 +10,8 @@ import config from "./config.js";
 import { serverUrl } from "./server.js";
 
 const CHECK_MS = 60_000;
-// A reload waits for these: a call to Muse, a video, someone typing.
-const BUSY = "#voice-button.on, #video-button.on, #tube-player:not([hidden]), input:focus";
+// A reload waits for these: a call to Muse, a video, the camera, someone typing.
+const BUSY = "#voice-button.on, #video-button.on, #tube-player:not([hidden]), #camera:not([hidden]), input:focus";
 
 let loaded = null; // the version this page was loaded with
 

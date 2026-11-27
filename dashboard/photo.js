@@ -264,13 +264,17 @@ function note(text, clearAfter = 0) {
   if (clearAfter) noteTimer = setTimeout(() => (generateNote.textContent = ""), clearAfter);
 }
 
-async function requestPicture() {
+/**
+ * Asks the Mac for a picture and waits for it, showing progress beside the buttons.
+ * `ask` is the request: a new picture by default, or (snapshot.js) a photo to redraw.
+ */
+export async function requestPicture(ask = { method: "POST" }, path = "/generate") {
   if (generate.classList.contains("busy")) return;
   generate.classList.add("busy");
   note("Creating a new picture…");
   try {
     const base = serverUrl();
-    let status = await (await fetch(`${base}/generate`, { method: "POST" })).json();
+    let status = await (await fetch(base + path, ask)).json();
     while (status.state === "running") {
       await new Promise((resolve) => setTimeout(resolve, STATUS_POLL_MS));
       status = await (await fetch(`${base}/status.json`, { cache: "no-store" })).json();
@@ -291,6 +295,9 @@ document.getElementById("generate-button").addEventListener("click", (event) => 
   event.stopPropagation();
   requestPicture();
 });
+
+/** True while a picture is being made. */
+export const makingPicture = () => generate.classList.contains("busy");
 
 // ---------- Earlier pictures ----------
 

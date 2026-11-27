@@ -5,6 +5,7 @@
 // The Mac also says when the dashboard's own files have changed, to load them afresh.
 import { setAgendaView } from "./agenda.js";
 import { browsePictures } from "./photo.js";
+import { takeSnapshot } from "./snapshot.js";
 import { refreshTasks, typing } from "./tasks.js";
 import { fullScreenVideo, pauseVideo, playVideo, resumeVideo, stopVideo } from "./youtube.js";
 
@@ -183,6 +184,8 @@ export function handleCommand(command) {
     else if (command.action === "stop") stopVideo();
     else if (command.action === "fullscreen") fullScreenVideo(true);
     else if (command.action === "window") fullScreenVideo(false);
+  } else if (command.name === "snapshot") {
+    takeSnapshot();
   } else if (command.name === "tasks") {
     refreshTasks(); // Muse changed the list on the Mac
   } else if (command.name === "notice" && typeof command.text === "string") {

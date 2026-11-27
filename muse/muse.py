@@ -142,6 +142,13 @@ COMMANDS = {
         "required": {"to": {"type": "string", "description": "previous, next or latest"}},
         "timeout_ms": 5000,
     },
+    "dashboard.photo.take": {
+        "description": "Take a photo with the Portal's camera after a three-second countdown "
+                       "and turn it into a stylised picture for the dashboard's background, "
+                       "which takes about half a minute and costs a few cents. Only when the "
+                       "people in front of the Portal ask for it.",
+        "timeout_ms": 5000,
+    },
     "dashboard.video.play": {
         "description": "Find a video on YouTube and play it on the Portal's screen, with sound. "
                        "Returns the title of what started playing.",
@@ -211,6 +218,8 @@ Use the commands to show what you are talking about, without being asked each ti
   lists today and tomorrow, `week` and `month` show a grid of days), `weather` for the
   forecast, `tasks` for the to-do list, `picture` for the picture alone, and `home` when
   the topic moves on.
+- `dashboard.photo.take` when the people there ask for a photo or a picture of
+  themselves as they are now. Tell them to look at the screen: it counts down from three.
 - `dashboard.video.play` when asked to play or put on something (music, a video, a
   channel), with what they asked for as the `query`; say the title that started.
   `dashboard.video.control` to pause, resume or stop it, or to make it `fullscreen` or
@@ -910,6 +919,8 @@ def dashboard_command(name, params):
         return {"name": "timer", "seconds": seconds, "label": label}
     if name == "dashboard.timer.cancel":
         return {"name": "timer", "seconds": 0}
+    if name == "dashboard.photo.take":
+        return {"name": "snapshot"}
     if name == "dashboard.video.play":
         return find_video(params.get("query"))
     if name == "dashboard.video.control":

@@ -62,6 +62,14 @@ outline if it cannot. Tap the screen to see the picture on its own for a minute.
 The two arrow buttons, or a swipe across the screen, go back and forth through the
 pictures made earlier; the one you stop on stays until a new picture is made.
 
+**Snapshots.** With `snapshot: true` in `dashboard/config.js`, a camera button opens the
+Portal's camera: take a photo, and the Mac has it redrawn in one of your styles, keeping
+whoever is in it as they are (`photoflow/flow.py snapshot PHOTO` does the same for any
+photo). The photo is sent to the image provider when you press "Make the picture", so ask
+your guests first; it is not kept on the Portal or the Mac. Snapshots count towards
+`button_daily_limit`. The Portal's camera switch must be on, and the app needs the camera
+permission, which `scripts/install.sh` grants.
+
 **Memories.** With `memories = true` in `profile.toml` (off by default), each picture is set
 in one of your own outings: a place and time picked at random from the Photos library,
 shown to the model through two of its photos, with your `interests` to draw on. The model

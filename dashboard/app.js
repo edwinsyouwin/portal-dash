@@ -3,6 +3,7 @@ import { startAgenda } from "./agenda.js";
 import { startControl } from "./control.js";
 import { startPhotos } from "./photo.js";
 import { startSettings } from "./settings.js";
+import { startSnapshot } from "./snapshot.js";
 import { startVoice } from "./voice.js";
 import { startYouTube } from "./youtube.js";
 
@@ -242,3 +243,4 @@ startVoice();
 startControl();
 startSettings();
 startYouTube();
+startSnapshot();

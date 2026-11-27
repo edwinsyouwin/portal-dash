@@ -17,6 +17,9 @@ export default {
   photos: { pollMinutes: 10 },
   // A shared to-do list, as a tab of the calendar card; kept on the Mac.
   tasks: true,
+  // A camera button: take a photo and have it redrawn in one of the picture styles. The
+  // photo is sent to the image provider. Needs `photos` above.
+  snapshot: true,
   // A YouTube button: search (needs YOUTUBE_API_KEY in the Mac's .env) and play here.
   youtube: true,
 

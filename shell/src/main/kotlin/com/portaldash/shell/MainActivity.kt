@@ -297,24 +297,32 @@ class MainActivity : Activity() {
         }
     }
 
-    /** Lets the bundled dashboard (and the dev server) use the microphone, and nothing else. */
+    /**
+     * Lets the bundled dashboard (and the dev server) use the microphone and the camera,
+     * and nothing else.
+     */
     private inner class MicrophoneClient : WebChromeClient() {
         override fun onPermissionRequest(request: PermissionRequest) {
-            val trusted = request.origin.host in MICROPHONE_HOSTS
-            val wantsMicrophone = PermissionRequest.RESOURCE_AUDIO_CAPTURE in request.resources
-            val granted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
-                PackageManager.PERMISSION_GRANTED
-            if (trusted && wantsMicrophone && granted) {
-                request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+            if (request.origin.host !in MICROPHONE_HOSTS) {
+                request.deny()
+                return
+            }
+            // What the page asked for, with the Android permission each one rests on.
+            val wanted = request.resources.mapNotNull { resource -> CAPTURE[resource]?.let { resource to it } }
+            val allowed = wanted.filter { allowed(it.second) }.map { it.first }
+            if (wanted.isNotEmpty() && allowed.size == wanted.size) {
+                request.grant(allowed.toTypedArray())
             } else {
-                // scripts/install.sh grants RECORD_AUDIO; ask in case it was installed another way.
-                if (trusted && wantsMicrophone) {
-                    requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 0)
-                }
+                // scripts/install.sh grants these; ask in case it was installed another way.
+                val missing = wanted.map { it.second }.filterNot { allowed(it) }
+                if (missing.isNotEmpty()) requestPermissions(missing.toTypedArray(), 0)
                 request.deny()
             }
         }
     }
+
+    private fun allowed(permission: String) =
+        checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
 
     /** Exposed to the page as `window.PortalShell`. */
     private inner class Bridge {
@@ -333,6 +341,10 @@ class MainActivity : Activity() {
 
         @JavascriptInterface
         fun reload() = runOnUiThread { webView.loadUrl(startUrl()) }
+
+        /** Whether the page may open the camera (snapshot.js shows its button if so). */
+        @JavascriptInterface
+        fun hasCamera(): Boolean = allowed(Manifest.permission.CAMERA)
 
         /** This device's IPv4 addresses, comma-separated: where to look for the Mac. */
         @JavascriptInterface
@@ -395,6 +407,10 @@ class MainActivity : Activity() {
         const val ASSET_HOST = "appassets.androidplatform.net"
         const val BUNDLED_URL = "https://$ASSET_HOST/index.html"
         val MICROPHONE_HOSTS = setOf(ASSET_HOST, "127.0.0.1", "localhost")
+        val CAPTURE = mapOf(
+            PermissionRequest.RESOURCE_AUDIO_CAPTURE to Manifest.permission.RECORD_AUDIO,
+            PermissionRequest.RESOURCE_VIDEO_CAPTURE to Manifest.permission.CAMERA,
+        )
 
         const val RETRY_MS = 15_000L
         const val CORNER_DP = 96

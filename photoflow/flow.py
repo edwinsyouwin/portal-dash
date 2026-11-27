@@ -9,6 +9,7 @@
 """Daily AI photo flow for the Portal dashboard.
 
   flow.py run     pick reference photos, generate today's picture, publish it to out/
+  flow.py snapshot PHOTO   redraw one photo (such as one just taken on the Portal) in a style
   flow.py people  list the people named in the Photos library
   flow.py gather  collect close-up reference photos of each subject from Photos into refs/
   flow.py serve   serve out/, the calendar (gcal.py) and the task list to the Portal over the home network,
@@ -95,6 +96,8 @@ MAX_TASK_CHARS = 120
 YOUTUBE_SEARCH = "https://www.googleapis.com/youtube/v3/search"
 YOUTUBE_RESULTS = 6
 MAX_QUERY_CHARS = 100
+# A photo taken on the Portal arrives as a JPEG no bigger than this.
+MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024
 # What /status.json answers with, so a dashboard looking for the Mac knows it found it.
 SERVICE = "portal-dash"
 
@@ -656,13 +659,17 @@ def run(args):
     if args.dry_run:
         return
 
+    make_picture(profile, history, prompt, [path for path, _ in refs], day, scene, style,
+                 memory["title"] if memory else None)
+
+
+def make_picture(profile, history, prompt, photos, day, scene, style, memory=None):
+    """Send the prompt and photos to the image provider and publish what comes back."""
     provider = profile.get("provider", "gemini")
     if provider not in PROVIDERS:
         sys.exit(f"Unknown provider {provider!r}; available: {', '.join(PROVIDERS)}")
     with tempfile.TemporaryDirectory() as tmp:
-        prepared = [
-            prepare_reference(path, Path(tmp) / f"ref{i}.jpg") for i, (path, _) in enumerate(refs)
-        ]
+        prepared = [prepare_reference(path, Path(tmp) / f"ref{i}.jpg") for i, path in enumerate(photos)]
         image, usage = PROVIDERS[provider](prompt, prepared, profile.get(provider, {}))
 
     # A day can have several pictures (the dashboard's button makes extra ones);
@@ -674,7 +681,7 @@ def run(args):
         "file": f"{picture_id}.jpg",
         "scene": scene,
         "style": style,
-        "memory": memory["title"] if memory else None,
+        "memory": memory,
         "provider": provider,
         "usage": usage,
     }
@@ -685,6 +692,31 @@ def run(args):
     print(f"Published {OUT / entry['file']}")
     if profile.get("photos_album"):
         sync_to_photos(profile["photos_album"])
+
+
+def snapshot(args):
+    """Redraw one photo in one of the profile's styles, keeping whoever is in it: the
+    dashboard's camera button sends its photo here. Nobody has to be a subject in
+    profile.toml, and no other photos are sent.
+    """
+    profile = load_profile()
+    history = load_manifest()["history"]
+    styles = profile["styles"]
+    today = dt.date.today()
+    style = choose(styles, [e["style"] for e in history[: len(styles) - 1]], random.Random())
+    prompt = "\n".join([
+        f"Redraw the attached photo as one image in this style: {style}.",
+        "",
+        "Keep everyone who is in it: the same number of people, and any animals, each "
+        "clearly recognisable (face, hair, build, glasses), in the same places and poses, "
+        "with the same expressions and clothes, doing what they are doing. You may tidy "
+        "and enrich the background in keeping with the place, but do not move them "
+        "somewhere else or add anyone. Landscape 3:2 composition. No text, captions or "
+        "watermarks in the image.",
+    ])
+    print(f"Photo:  {args.photo}\nStyle:  {style}\n\n{prompt}\n")
+    scene = f"a snapshot from {today:%B} {today.day}"
+    make_picture(profile, history, prompt, [args.photo], today.isoformat(), scene, style)
 
 
 def people(args):
@@ -904,8 +936,9 @@ class Generator:
     def status(self):
         return {"state": self.state, "message": self.message}
 
-    def start(self):
-        """Begin a generation unless one is running or today's allowance is used up."""
+    def start(self, photo=None):
+        """Begin a generation unless one is running or today's allowance is used up.
+        With `photo` (a JPEG's bytes) the picture is that photo redrawn."""
         with self.lock:
             if self.state == "running":
                 return 202, self.status()
@@ -919,11 +952,16 @@ class Generator:
                 }
             self.made_today += 1
             self.state, self.message = "running", ""
-        threading.Thread(target=self.work, daemon=True).start()
+        threading.Thread(target=self.work, args=(photo,), daemon=True).start()
         return 202, self.status()
 
-    def work(self):
-        result = subprocess.run([sys.executable, __file__, "run"], capture_output=True, text=True)
+    def work(self, photo):
+        # The photo exists only for as long as the picture takes to make.
+        with tempfile.NamedTemporaryFile(suffix=".jpg") as taken:
+            taken.write(photo or b"")
+            taken.flush()
+            command = ["snapshot", taken.name] if photo else ["run"]
+            result = subprocess.run([sys.executable, __file__, *command], capture_output=True, text=True)
         lines = (result.stderr or result.stdout).strip().splitlines()
         with self.lock:
             if result.returncode == 0:
@@ -1121,6 +1159,13 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/generate":
             self.send_json(*self.generator.start())
+        elif self.path == "/snapshot":
+            length = int(self.headers.get("Content-Length") or 0)
+            photo = self.rfile.read(length) if 0 < length <= MAX_SNAPSHOT_BYTES else b""
+            if photo[:3] != b"\xff\xd8\xff":
+                self.send_json(400, {"state": "error", "message": "That was not a photo"})
+            else:
+                self.send_json(*self.generator.start(photo))
         elif self.path == "/tasks":
             # Sent as plain text by the dashboard, which spares the browser a preflight.
             try:
@@ -1159,6 +1204,10 @@ def main():
     )
     run_parser.add_argument("--dry-run", action="store_true", help="show the choices and prompt, generate nothing")
     run_parser.set_defaults(handler=run)
+
+    snapshot_parser = commands.add_parser("snapshot", help="redraw one photo in one of the styles")
+    snapshot_parser.add_argument("photo", type=Path)
+    snapshot_parser.set_defaults(handler=snapshot)
 
     people_parser = commands.add_parser("people", help="list the people named in the Photos library")
     people_parser.add_argument("--limit", type=int, default=30, help="how many names to show")

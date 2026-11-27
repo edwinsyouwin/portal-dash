@@ -4,6 +4,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- The dashboard's voice calls to Muse use the microphone (voice.js). -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- The dashboard's snapshot button (snapshot.js). -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- Lends the Bluetooth radio to the Mac while it pairs with the Muse app (BleRelay). -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
