@@ -7,8 +7,12 @@ import { makingPicture, requestPicture } from "./photo.js";
 
 const COUNTDOWN_S = 3;
 const PHOTO_WIDTH = 1536; // what the image provider is sent, at most
+const STILL_WIDTH = 1280; // the most the Portal's camera gives a web page
+const STILL_HEIGHT = 720;
 const JPEG_QUALITY = 0.9;
 const ERROR_MS = 5_000;
+// With no one to press the button (Muse asked): time to take the photo and show it.
+const SEND_AFTER_MS = 5_000;
 
 const button = document.getElementById("camera-button");
 const screen = document.getElementById("camera");
@@ -54,7 +58,7 @@ async function open() {
   show(false);
   try {
     camera = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "user", width: { ideal: 1920 }, height: { ideal: 1080 } },
+      video: { facingMode: "user", width: { ideal: STILL_WIDTH }, height: { ideal: STILL_HEIGHT } },
     });
     view.srcObject = camera;
   } catch (error) {
@@ -64,12 +68,30 @@ async function open() {
   }
 }
 
-function capture() {
-  const scale = Math.min(1, PHOTO_WIDTH / view.videoWidth);
+/**
+ * The sharpest picture the camera will give. The Portal's live view is only 640 by 480
+ * whatever is asked for; its still-photo mode gives twice that.
+ */
+async function sharpest() {
+  try {
+    const still = await new ImageCapture(camera.getVideoTracks()[0]).takePhoto({
+      imageWidth: STILL_WIDTH,
+      imageHeight: STILL_HEIGHT,
+    });
+    const picture = await createImageBitmap(still);
+    return { picture, width: picture.width, height: picture.height };
+  } catch {
+    return { picture: view, width: view.videoWidth, height: view.videoHeight };
+  }
+}
+
+async function capture() {
+  const { picture, width, height } = await sharpest();
+  const scale = Math.min(1, PHOTO_WIDTH / width);
   const canvas = document.createElement("canvas");
-  canvas.width = Math.round(view.videoWidth * scale);
-  canvas.height = Math.round(view.videoHeight * scale);
-  canvas.getContext("2d").drawImage(view, 0, 0, canvas.width, canvas.height);
+  canvas.width = Math.round(width * scale);
+  canvas.height = Math.round(height * scale);
+  canvas.getContext("2d").drawImage(picture, 0, 0, canvas.width, canvas.height);
   canvas.toBlob(
     (taken) => {
       photo = taken;
@@ -94,8 +116,9 @@ function countdown(send = false) {
     count.textContent = left || "";
     if (left) return;
     clearInterval(timer);
+    hint.textContent = "Hold still…"; // the camera takes a couple of seconds over it
     capture();
-    if (send) setTimeout(use, 1_500); // long enough to see what was taken
+    if (send) setTimeout(use, SEND_AFTER_MS);
   }, 1_000);
 }
 
