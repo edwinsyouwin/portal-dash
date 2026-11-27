@@ -4,6 +4,7 @@
 // and shows Muse's picture; the Mac holds the call and listens for the wake words.
 import config from "./config.js";
 import { handleCommand } from "./control.js";
+import { serverUrl } from "./server.js";
 
 const SAMPLE_RATE = 24_000;
 // Start each run of speech this far ahead, to ride out uneven arrival over Wi-Fi.
@@ -248,7 +249,7 @@ async function open() {
     socket.send(speaking() ? SILENCE : data);
   };
 
-  const host = new URL(config.server).hostname;
+  const host = new URL(serverUrl()).hostname;
   const opened = new WebSocket(`ws://${host}:${config.muse.port}`);
   opened.binaryType = "arraybuffer";
   socket = opened;

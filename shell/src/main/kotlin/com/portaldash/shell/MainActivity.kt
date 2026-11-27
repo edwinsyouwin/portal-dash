@@ -29,6 +29,8 @@ import android.webkit.WebViewClient
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.net.HttpURLConnection
+import java.net.NetworkInterface
+import java.net.Inet4Address
 import java.net.URL
 import java.security.MessageDigest
 import javax.crypto.Mac
@@ -331,6 +333,32 @@ class MainActivity : Activity() {
 
         @JavascriptInterface
         fun reload() = runOnUiThread { webView.loadUrl(startUrl()) }
+
+        /** This device's IPv4 addresses, comma-separated: where to look for the Mac. */
+        @JavascriptInterface
+        fun localAddresses(): String = try {
+            NetworkInterface.getNetworkInterfaces().asSequence()
+                .filter { it.isUp && !it.isLoopback }
+                .flatMap { it.inetAddresses.asSequence() }
+                .filterIsInstance<Inet4Address>()
+                .mapNotNull { it.hostAddress }
+                .joinToString(",")
+        } catch (e: IOException) {
+            ""
+        }
+
+        /**
+         * The dashboard found the Mac at a new address: ask for live files there from now
+         * on. They are still only used when signed with the key the Mac gave over USB.
+         */
+        @JavascriptInterface
+        fun serverMoved(host: String) {
+            if (!Regex("""\d{1,3}(\.\d{1,3}){3}""").matches(host)) return
+            val live = prefs.getString(PREF_LIVE, null) ?: return
+            val old = URL(live)
+            prefs.edit().putString(PREF_LIVE, "http://$host:${old.port}${old.path}").apply()
+            liveDownUntil = 0
+        }
 
         private fun setWindowBrightness(value: Float) = runOnUiThread {
             window.attributes = window.attributes.apply { screenBrightness = value }

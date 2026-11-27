@@ -57,6 +57,7 @@ import sys
 import threading
 import time
 import types
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -95,7 +96,7 @@ log = logging.getLogger("muse")
 
 # ---------- What Muse may do to the dashboard ----------
 
-VIEWS = ("home", "calendar", "weather", "picture")
+VIEWS = ("home", "calendar", "weather", "picture", "tasks")
 RANGES = ("today", "week", "month")
 PICTURES = ("previous", "next", "latest")
 MAX_TIMER_S = 24 * 3600
@@ -107,9 +108,11 @@ PHOTO_SERVER = "http://127.0.0.1:8766"  # photoflow/flow.py serve, on this Mac
 # parameter again before anything reaches the Portal.
 COMMANDS = {
     "dashboard.show": {
-        "description": "Change what the Portal's screen shows: enlarge the calendar or the "
-                       "weather, show the picture alone, or go back to the normal dashboard.",
-        "required": {"view": {"type": "string", "description": "home, calendar, weather or picture"}},
+        "description": "Change what the Portal's screen shows: enlarge the calendar, the task "
+                       "list or the weather, show the picture alone, or go back to the normal "
+                       "dashboard.",
+        "required": {"view": {"type": "string",
+                              "description": "home, calendar, tasks, weather or picture"}},
         "optional": {"range": {"type": "string",
                                "description": "With calendar: today, week or month. Default: unchanged."}},
         "timeout_ms": 5000,
@@ -134,6 +137,30 @@ COMMANDS = {
         "description": "Change the background to another of the AI pictures already made: the "
                        "one before the one showing, the one after, or the latest.",
         "required": {"to": {"type": "string", "description": "previous, next or latest"}},
+        "timeout_ms": 5000,
+    },
+    "dashboard.tasks.list": {
+        "description": "Read the household's task list shown on the dashboard. Each task has "
+                       "an id, its text and whether it is done.",
+        "timeout_ms": 5000,
+    },
+    "dashboard.tasks.add": {
+        "description": "Add a task to the household's list.",
+        "required": {"text": {"type": "string", "description": "The task, in a few words."}},
+        "timeout_ms": 5000,
+    },
+    "dashboard.tasks.update": {
+        "description": "Change a task: mark it done or not done, or reword it. Get the id "
+                       "from dashboard.tasks.list first.",
+        "required": {"id": {"type": "integer", "description": "The task's id."}},
+        "optional": {"done": {"type": "boolean", "description": "Whether it is finished."},
+                     "text": {"type": "string", "description": "New wording."}},
+        "timeout_ms": 5000,
+    },
+    "dashboard.tasks.remove": {
+        "description": "Remove a task from the list for good. Get the id from "
+                       "dashboard.tasks.list first.",
+        "required": {"id": {"type": "integer", "description": "The task's id."}},
         "timeout_ms": 5000,
     },
     "dashboard.change.request": {
@@ -165,7 +192,11 @@ Use the commands to show what you are talking about, without being asked each ti
 
 - `dashboard.show` with `calendar` when discussing plans or the schedule (`range`: `today`
   lists today and tomorrow, `week` and `month` show a grid of days), `weather` for the
-  forecast, `picture` for the picture alone, and `home` when the topic moves on.
+  forecast, `tasks` for the to-do list, `picture` for the picture alone, and `home` when
+  the topic moves on.
+- `dashboard.tasks.*` to keep the household's to-do list: read it with `list` before
+  changing or removing a task, so that you have its id; mark things done rather than
+  removing them unless asked to remove. Say what you changed.
 - `dashboard.timer.start` when asked for a timer, with a short `label`. Say how long you set.
 - `dashboard.picture.new` only when asked for a new picture.
 - `dashboard.picture.browse` to go back (`previous`) or forward (`next`) through the
@@ -864,6 +895,37 @@ def dashboard_command(name, params):
     raise ValueError("unsupported command")
 
 
+def tasks_request(change=None):
+    """The household's task list, kept by the photo server on this Mac: read it, or with
+    `change` ({"action": ...}, as flow.py's Tasks takes) change it. Returns the list."""
+    body = json.dumps(change).encode() if change else None
+    request = urllib.request.Request(f"{PHOTO_SERVER}/tasks" + ("" if change else ".json"), data=body)
+    try:
+        with urllib.request.urlopen(request, timeout=4) as response:
+            return json.load(response)["tasks"]
+    except urllib.error.HTTPError as error:
+        # The server's reason (no such id, list full) is fit for Muse to read.
+        raise ValueError(str(json.load(error).get("error") or "the task list refused that")) from None
+
+
+def task_change(name, params):
+    """Check one of the dashboard.tasks.* commands and turn it into a change to the list."""
+    if name == "dashboard.tasks.add":
+        return {"action": "add", "text": params.get("text")}
+    if type(params.get("id")) is not int:
+        raise ValueError("id must be a task's id, from dashboard.tasks.list")
+    if name == "dashboard.tasks.remove":
+        return {"action": "delete", "id": params["id"]}
+    change = {"action": "update", "id": params["id"]}
+    if isinstance(params.get("text"), str):
+        change["text"] = params["text"]
+    if isinstance(params.get("done"), bool):
+        change["done"] = params["done"]
+    if len(change) == 2:
+        raise ValueError("say what to change: done, text or both")
+    return change
+
+
 def new_picture():
     """Ask the photo server on this Mac for another picture, as the dashboard's button does."""
     request = urllib.request.Request(f"{PHOTO_SERVER}/generate", method="POST")
@@ -1053,6 +1115,13 @@ class ControlLink:
             if name == "dashboard.picture.new":
                 new_picture()
                 return {"ok": True, "payload": {"started": True}}
+            if name == "dashboard.tasks.list":
+                return {"ok": True, "payload": {"tasks": tasks_request()}}
+            if name.startswith("dashboard.tasks.") and name in COMMANDS:
+                tasks = tasks_request(task_change(name, params))
+                # Have the dashboards show the list as it now is.
+                asyncio.run_coroutine_threadsafe(self._deliver({"name": "tasks"}), self._loop)
+                return {"ok": True, "payload": {"tasks": tasks}}
             if name == "dashboard.change.request":
                 self._changes.request(params.get("request"))
                 asyncio.run_coroutine_threadsafe(

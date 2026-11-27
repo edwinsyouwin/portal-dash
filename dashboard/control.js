@@ -5,6 +5,7 @@
 // The Mac also says when the dashboard's own files have changed, to load them afresh.
 import { setAgendaView } from "./agenda.js";
 import { browsePictures } from "./photo.js";
+import { refreshTasks, typing } from "./tasks.js";
 
 const FOCUS_MS = 3 * 60_000; // enlarged views go back to normal by themselves
 const DONE_MS = 2 * 60_000; // how long "Time's up" stays if nobody taps it
@@ -58,8 +59,10 @@ function show(view, range) {
   body.classList.remove("photo-mode");
   if (view === "home") return;
   if (view === "picture") body.classList.add("photo-mode");
+  else if (view === "tasks") body.dataset.focus = "calendar"; // the tasks are a tab of that card
   else if (view in FOCUSED) body.dataset.focus = view;
   else return;
+  if (view === "tasks") setAgendaView("tasks");
   if (view === "calendar" && range) setAgendaView(range);
   focusTimer = setTimeout(() => show("home"), FOCUS_MS);
 }
@@ -71,7 +74,7 @@ document.addEventListener(
     const card = document.getElementById(FOCUSED[body.dataset.focus]);
     if (!card || card.contains(event.target)) return;
     event.stopPropagation();
-    show("home");
+    if (!typing()) show("home");
   },
   true,
 );
@@ -167,6 +170,8 @@ export function handleCommand(command) {
     show(command.view, command.range);
   } else if (command.name === "picture" && ["previous", "next", "latest"].includes(command.to)) {
     browsePictures(command.to);
+  } else if (command.name === "tasks") {
+    refreshTasks(); // Muse changed the list on the Mac
   } else if (command.name === "notice" && typeof command.text === "string") {
     notice(command.text.slice(0, 300), true);
   } else if (command.name === "reload") {

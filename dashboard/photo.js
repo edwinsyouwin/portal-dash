@@ -2,6 +2,8 @@
 // so it stays on screen while the Mac is asleep or off. The arrow buttons, or a swipe
 // across the screen, go back through the earlier pictures the Mac still has.
 import config from "./config.js";
+import { serverUrl } from "./server.js";
+import { typing } from "./tasks.js";
 
 const CACHE_NAME = "daily-photo";
 const META_KEY = "photo"; // the newest picture
@@ -153,8 +155,6 @@ async function showCached(meta) {
   const response = await cache.match(meta.url);
   if (response) display(URL.createObjectURL(await response.blob()), meta);
 }
-
-const serverUrl = () => config.server.replace(/\/$/, "");
 
 async function fetchManifest() {
   const response = await fetch(`${serverUrl()}/manifest.json`, { cache: "no-store" });
@@ -365,7 +365,7 @@ document.addEventListener(
 // Tap to see the picture on its own; the clock and weather return by themselves.
 let peekTimer = null;
 document.addEventListener("click", () => {
-  if (!document.body.classList.contains("has-photo")) return;
+  if (!document.body.classList.contains("has-photo") || typing()) return;
   clearTimeout(peekTimer);
   if (!document.body.classList.toggle("photo-mode")) return;
   peekTimer = setTimeout(() => document.body.classList.remove("photo-mode"), PEEK_MS);

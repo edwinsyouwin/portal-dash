@@ -15,6 +15,8 @@ export default {
 
   // Daily AI picture. Set to null to show only the dashboard.
   photos: { pollMinutes: 10 },
+  // A shared to-do list, as a tab of the calendar card; kept on the Mac.
+  tasks: true,
 
   // Google Calendar agenda: today plus this many following days. Set to null to hide it.
   calendar: { pollMinutes: 5, daysAhead: 1 },

@@ -11,7 +11,7 @@
   flow.py run     pick reference photos, generate today's picture, publish it to out/
   flow.py people  list the people named in the Photos library
   flow.py gather  collect close-up reference photos of each subject from Photos into refs/
-  flow.py serve   serve out/ and the calendar (gcal.py) to the Portal over the home network,
+  flow.py serve   serve out/, the calendar (gcal.py) and the task list to the Portal over the home network,
                   and the dashboard's own files, signed, for updates without the USB cable
 
 Who is in the pictures, what they do and in which styles is set in profile.toml.
@@ -85,6 +85,12 @@ DASHBOARD = ROOT.parent / "dashboard"
 DEPLOY_KEY = Path("~/.config/portal-dash/deploy_key").expanduser()
 # Never served: it holds this household's settings and the key for Muse calls.
 PRIVATE_FILES = {"config.js"}
+# The dashboard's task list, kept outside the repository.
+TASKS_FILE = Path("~/.config/portal-dash/tasks.json").expanduser()
+MAX_TASKS = 100
+MAX_TASK_CHARS = 120
+# What /status.json answers with, so a dashboard looking for the Mac knows it found it.
+SERVICE = "portal-dash"
 
 
 # ---------- Reference photos ----------
@@ -913,6 +919,73 @@ class Generator:
                 self.state, self.message = "error", (lines[-1] if lines else "Generation failed")[:300]
 
 
+class Tasks:
+    """The household's task list: a small JSON file, changed one request at a time.
+
+    A task is {"id": number, "text": str, "done": bool}. Ids are never reused, so a task
+    can be named by its id from the dashboard or by Muse without mix-ups.
+    """
+
+    def __init__(self, path=TASKS_FILE):
+        self._path = path
+        self._lock = threading.Lock()
+
+    def _load(self):
+        try:
+            stored = json.loads(self._path.read_text())
+            return stored["tasks"], stored["next_id"]
+        except (OSError, ValueError, KeyError):
+            return [], 1
+
+    def list(self):
+        with self._lock:
+            return self._load()[0]
+
+    def change(self, request):
+        """Apply {"action": add | update | delete | clear_done, ...} and return the list.
+        Raises ValueError, with a reason fit to show, for anything else."""
+        if not isinstance(request, dict):
+            raise ValueError("not a task request")
+        with self._lock:
+            tasks, next_id = self._load()
+            action = request.get("action")
+            if action == "add":
+                if len(tasks) >= MAX_TASKS:
+                    raise ValueError("the list is full; finish or remove some tasks first")
+                tasks.append({"id": next_id, "text": self._text(request), "done": False})
+                next_id += 1
+            elif action in ("update", "delete"):
+                task = next((t for t in tasks if t["id"] == request.get("id")), None)
+                if task is None:
+                    raise ValueError("no task with that id")
+                if action == "delete":
+                    tasks.remove(task)
+                else:
+                    if "text" in request:
+                        task["text"] = self._text(request)
+                    if "done" in request:
+                        task["done"] = bool(request["done"])
+            elif action == "clear_done":
+                tasks = [t for t in tasks if not t["done"]]
+            else:
+                raise ValueError("action must be add, update, delete or clear_done")
+            self._path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            # Written whole to a second file first, so a crash cannot leave half a list.
+            scratch = self._path.with_suffix(".part")
+            scratch.write_text(json.dumps({"tasks": tasks, "next_id": next_id}, indent=1))
+            scratch.replace(self._path)
+            return tasks
+
+    @staticmethod
+    def _text(request):
+        text = request.get("text")
+        text = " ".join(text.split()) if isinstance(text, str) else ""
+        text = "".join(c for c in text if c.isprintable())[:MAX_TASK_CHARS]
+        if not text:
+            raise ValueError("a task needs some words")
+        return text
+
+
 def deploy_key():
     """The key that signs dashboard files for the Portal, made on first use."""
     if not DEPLOY_KEY.exists():
@@ -924,6 +997,7 @@ def deploy_key():
 
 class Handler(SimpleHTTPRequestHandler):
     generator = None  # set by serve()
+    tasks = Tasks()
 
     def send_dashboard_file(self, name):
         """One of the dashboard's files, with a signature over its name and contents."""
@@ -958,7 +1032,9 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?")[0]
         if path == "/status.json":
-            self.send_json(200, self.generator.status())
+            self.send_json(200, {"service": SERVICE, **self.generator.status()})
+        elif path == "/tasks.json":
+            self.send_json(200, {"tasks": self.tasks.list()})
         elif path == "/calendar.json":
             import gcal
 
@@ -972,6 +1048,13 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/generate":
             self.send_json(*self.generator.start())
+        elif self.path == "/tasks":
+            # Sent as plain text by the dashboard, which spares the browser a preflight.
+            try:
+                length = min(int(self.headers.get("Content-Length") or 0), 4096)
+                self.send_json(200, {"tasks": self.tasks.change(json.loads(self.rfile.read(length)))})
+            except ValueError as error:
+                self.send_json(400, {"error": str(error)})
         else:
             self.send_error(404)
 

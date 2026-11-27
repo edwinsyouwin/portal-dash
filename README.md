@@ -138,6 +138,23 @@ The part after `CALENDAR_` is the label on that person's events. The Mac's serve
 lines in `.env` are picked up without a restart. Anyone with a secret address can read
 that calendar, and event titles are served unauthenticated on the home network.
 
+## Tasks
+
+The calendar card has a Tasks tab: a shared to-do list. Tap the circle to finish a task,
+its words to change them, × to remove it, and type in the box to add one. The list lives
+on the Mac (`~/.config/portal-dash/tasks.json`), so it survives restarts and reinstalls
+and Muse can read and change it too ("add milk to the list", "what's left to do?"). The
+Portal shows its last copy while the Mac is away, but changes need the Mac. Like the
+pictures, the list is served unauthenticated on the home network. `tasks: false` in
+`dashboard/config.js` hides it.
+
+## If the Mac changes network
+
+Settings (the sliders button) shows whether the Mac is answering and has a "Look for the
+Mac" button, which searches the Portal's own network and the one the Mac was last on,
+then reconnects everything to the address it finds. A fixed address (a DHCP reservation
+on your router) avoids the need.
+
 ## Muse calls (`muse/`)
 
 Talk to your [Muse](https://gadgets.muse.ai/) through the Portal's microphone, speakers
@@ -185,7 +202,8 @@ Muse and the screen:
 - Muse is given these commands and no others: `dashboard.show` (enlarge the calendar or
   the weather, show the picture alone, or go back), `dashboard.timer.start` and
   `dashboard.timer.cancel` (a countdown on screen that chimes), and
-  `dashboard.picture.new` and `dashboard.picture.browse` (earlier pictures). The Mac
+  `dashboard.picture.new` and `dashboard.picture.browse` (earlier pictures), and
+  `dashboard.tasks.list`, `.add`, `.update` and `.remove` (the task list). The Mac
   checks every parameter, and the dashboard checks again.
   Enlarged views go back by themselves after three minutes, or on a tap outside them.
 - Asked in text (the Muse app), Muse runs them within seconds. In a call it currently

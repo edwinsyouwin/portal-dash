@@ -61,6 +61,11 @@ on the Mac (`dashboard_command`) and again in the page (`handleCommand`). To add
 add it to `COMMANDS` and `GUIDE`, validate it in `dashboard_command`, handle it in
 `control.js`.
 
+The task list is the one piece of household data the Mac stores itself: `Tasks` in
+`flow.py`, read and changed over `/tasks.json` and `/tasks` by the page (`tasks.js`) and
+by Muse's `dashboard.tasks.*` commands. The Mac's address is read through
+`dashboard/server.js`, never `config.server` directly, so that Settings can move it.
+
 `dashboard.change.request` passes the owner's words to `ChangeDesk`, which runs Claude
 Code with file tools only, in `dashboard/`, and keeps the result only if it passes the
 checks there. Kept changes are local commits titled `Voice change: …`.
