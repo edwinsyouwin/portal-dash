@@ -216,6 +216,10 @@ Using it:
   hangs up a voice call itself. It cannot end a video call, so there the Mac listens for
   "goodbye" (or "stop listening", "hang up") with a local speech model (Whisper, about
   150 MB, fetched on first use) and hangs up; the sound and words stay on the Mac.
+- Wake words are sometimes "heard" in other talk or a television. A voice call started
+  that way ends if nothing is said in five seconds, a video call if nothing is said in
+  twenty. `JARVIS_THRESHOLD` and `JARVIS_RUN` in `muse/muse.py` set how sure the
+  "Hey Jarvis" detector must be.
 - The Portal's own microphone switch must be on.
 
 Muse and the screen:

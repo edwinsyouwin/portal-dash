@@ -76,7 +76,13 @@ KEY_FILE = "portal_key"
 # Device tokens are rotated once they are this old, as the SDK's own service does.
 TOKEN_REFRESH_AGE_S = 3 * 3600
 # openWakeWord scores each 80 ms of sound from 0 to 1; its own suggested cutoff.
-JARVIS_THRESHOLD = 0.5
+JARVIS_THRESHOLD = 0.7
+# ... and the phrase counts only when this many in a row reach it. Someone saying it
+# scores high for several; a television or a similar-sounding word mostly manages one.
+JARVIS_RUN = 2
+# A video call started by the wake word ends if nobody has said anything this long after
+# it connects: it was most likely a false wake. Long enough for Muse's greeting first.
+VIDEO_WAKE_GRACE_S = 20
 # The wake phrase that starts a video call; any other starts a voice call.
 VIDEO_PHRASE = "Hey Jarvis"
 # First byte of each binary message to the dashboard: sound, or a video frame that is
@@ -455,6 +461,7 @@ class HeyJarvis:
         openwakeword.utils.download_models(["hey_jarvis"])  # once; kept with the package
         self._model = Model(wakeword_models=["hey_jarvis"], inference_framework="onnx")
         self._pending = b""
+        self._run = 0  # chunks in a row that scored as the phrase
 
     def feed(self, pcm):
         """16 kHz 16-bit mono sound, in any size of piece. True if the phrase was in it."""
@@ -465,12 +472,14 @@ class HeyJarvis:
         while len(self._pending) >= self.CHUNK_BYTES:
             chunk, self._pending = self._pending[:self.CHUNK_BYTES], self._pending[self.CHUNK_BYTES:]
             scores = self._model.predict(numpy.frombuffer(chunk, dtype=numpy.int16))
-            heard = heard or max(scores.values()) >= JARVIS_THRESHOLD
+            self._run = self._run + 1 if max(scores.values()) >= JARVIS_THRESHOLD else 0
+            heard = heard or self._run >= JARVIS_RUN
         return heard
 
     def reset(self):
         self._model.reset()
         self._pending = b""
+        self._run = 0
 
     def close(self):
         pass
@@ -532,6 +541,7 @@ class Farewell:
         if Farewell._worker is None:
             Farewell._worker = ThreadPoolExecutor(1, thread_name_prefix="farewell")
         self._on_goodbye = on_goodbye
+        self.spoken = False  # the caller has said something, anything
         self._resample = Pcm24To16()
         self._lead = b""
         self._speech = None  # what is being said, once it has started
@@ -571,7 +581,9 @@ class Farewell:
         if result.exception() is not None:
             log.warning("could not listen for goodbye (%s)", type(result.exception()).__name__)
         elif result.result():
-            self._on_goodbye()
+            self.spoken = True
+            if result.result() == "goodbye":
+                self._on_goodbye()
 
     @classmethod
     def _is_goodbye(cls, speech):
@@ -589,7 +601,7 @@ class Farewell:
                                             condition_on_previous_text=False, without_timestamps=True)
         said = " ".join(segment.text for segment in segments if segment.no_speech_prob < 0.6)
         words = re.findall(r"[a-z']+", said.lower())
-        return bool(FAREWELL.search(" ".join(words)))
+        return "goodbye" if FAREWELL.search(" ".join(words)) else "words" if words else ""
 
 
 class CallFailed(Exception):
@@ -1402,6 +1414,8 @@ class Dashboard:
                 self._video, self._switch = video, None
                 self._listen_in()
                 self._farewell = self._listen_for_goodbye() if video else None
+                if video and source is not None:
+                    self._expect_speech()
                 self.tell(type="state", state="connecting", video=video)
                 picture = PortalVideo(self._outbox) if video else None
                 self._call = asyncio.create_task(
@@ -1454,6 +1468,17 @@ class Dashboard:
             self._detector.reset()
             fast = getattr(self._detector, "resampler", None)
             self._tap = fast() if fast else Pcm24To16()
+
+    def _expect_speech(self):
+        """A wake word started this video call: end it if nobody then says anything."""
+        listening = self._farewell
+
+        def check():
+            if listening is not None and listening is self._farewell and not listening.spoken:
+                log.info("nobody spoke after the wake word; ending the call")
+                self._call.cancel()
+
+        asyncio.get_running_loop().call_later(VIDEO_WAKE_GRACE_S, check)
 
     def _listen_for_goodbye(self):
         try:
