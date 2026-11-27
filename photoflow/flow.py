@@ -622,7 +622,7 @@ def run(args):
             subjects, rng, open_library(profile), profile.get("photos_album")
         )
     memory = None
-    if profile.get("memories", True) and not args.source:
+    if profile.get("memories", False) and not args.source:
         library = Path(profile.get("library", DEFAULT_LIBRARY)).expanduser()
         memory = library.exists() and pick_memory(open_library(profile), subjects, profile, history, rng)
     if memory:

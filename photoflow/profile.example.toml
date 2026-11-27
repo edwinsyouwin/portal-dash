@@ -19,9 +19,10 @@ library = "~/Pictures/Photos Library.photoslibrary"
 
 # Memories: each picture is set in one of your own outings, picked at random from the
 # Photos library and shown to the model through two of its photos, which then invents a
-# new moment there. Photos with anyone but the subjects in them are never sent. Set to
-# false to use only the scenes below.
-memories = true
+# new moment there. Photos with anyone but the subjects in them are never sent. Off
+# unless you turn it on, because it sends more of your own photos to the image provider;
+# when off, the scenes below are used.
+memories = false
 
 # Places (as Photos names them) never to use as a memory. "Home" is always skipped.
 memory_skip = []
@@ -33,8 +34,8 @@ interests = [
   "live music",
 ]
 
-# Used when memories are off, or none can be found. What the three of you are doing. One is used per day; none repeats until all have
-# had a turn. Write each so it reads naturally after "It shows Alex, Sam and Biscuit: ".
+# Used when memories are off, or none can be found. What the three of you are doing.
+# One is used per day; none repeats until all have had a turn. Write each so it reads naturally after "It shows Alex, Sam and Biscuit: ".
 # Replace these with your own interests and memories.
 scenes = [
   "hiking a foggy redwood trail",
