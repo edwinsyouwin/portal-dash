@@ -10,6 +10,7 @@
 
   flow.py run     pick reference photos, generate today's picture, publish it to out/
   flow.py people  list the people named in the Photos library
+  flow.py gather  collect close-up reference photos of each subject from Photos into refs/
   flow.py serve   serve out/ and the calendar (gcal.py) to the Portal over the home network,
                   and the dashboard's own files, signed, for updates without the USB cable
 
@@ -49,6 +50,20 @@ HISTORY_LIMIT = 60  # pictures kept in out/
 REFERENCE_MAX_PX = 1536  # long edge of the reference photos sent to the model
 REFERENCE_MIN_PX = 1024  # library copies smaller than this are only thumbnails
 CANDIDATE_POOL = 20  # pick at random among this many best-scored library photos
+# `gather`: how many close-ups of each subject and group photos to collect, from how far
+# back (people change), and how much of the photo a face must fill to be worth cropping.
+GATHER_PORTRAITS = 10
+GATHER_TOGETHER = 6
+GATHER_YEARS = 3
+GATHER_MIN_FACE = 0.1  # face width as a fraction of the photo's long edge
+GATHER_MIN_FACE_TOGETHER = 0.05
+GATHER_MAX_TURN = 0.6  # radians the head may be turned away from the camera
+PORTRAIT_FACES_WIDE = 3  # a close-up is this many face-widths across: head and shoulders
+PORTRAIT_MIN_PX = 480  # close-ups cropped smaller than this are too blurry to help
+PORTRAIT_MAX_PX = 1024
+SUNGLASSES, EYES_CLOSED = 2, 1  # how Photos records them (glasses type, eye state)
+# Close-ups of each subject sent with every picture, unless profile.toml says otherwise.
+REFERENCE_PORTRAITS = 2
 PORT = 8766
 
 # Live dashboard updates: the shell app asks for /dashboard/<file> and only uses an answer
@@ -176,23 +191,28 @@ def images_in(folder):
     return sorted(p for p in folder.iterdir() if p.suffix.lower() in IMAGE_SUFFIXES)
 
 
-def pick_from_folder(subjects, rng):
+def pick_from_folder(subjects, rng, portraits):
     """Choose reference photos from refs/: a group photo from refs/together/ if there
-    are any, otherwise one from each subject's own folder (refs/<name>/, lower case).
-    Returns None when refs/ holds no usable photos, so the library is used instead.
+    are any, and up to `portraits` close-ups from each subject's own folder
+    (refs/<name>/, lower case). Several views of a face give a much better likeness
+    than one. Returns None when refs/ holds no usable photos, so the library is used.
     """
     together = images_in(REFS / "together")
-    if together:
-        everyone = ", ".join(s["name"] for s in subjects)
-        return [(rng.choice(together), f"shows {everyone} together")]
-
     per_subject = [images_in(REFS / s["name"].lower()) for s in subjects]
-    if not any(per_subject):
+    if not together and not any(per_subject):
         return None
     empty = [s["name"].lower() for s, found in zip(subjects, per_subject) if not found]
-    if empty:
+    if empty and not together:
         sys.exit(f"Add photos to {', '.join(str(REFS / name) for name in empty)} (or to {REFS / 'together'}).")
-    return [(rng.choice(found), f"shows {s['name']}") for s, found in zip(subjects, per_subject)]
+
+    refs = []
+    if together:
+        everyone = ", ".join(s["name"] for s in subjects)
+        refs.append((rng.choice(together), f"shows {everyone} together"))
+    for subject, found in zip(subjects, per_subject):
+        chosen = rng.sample(found, min(portraits, len(found)))
+        refs += [(path, f"shows {subject['name']} alone, close up") for path in chosen]
+    return refs
 
 
 def refs_from_files(paths, subjects):
@@ -239,6 +259,9 @@ def build_prompt(subjects, refs, scene, style):
         "",
         "Keep each of them clearly recognisable from the references: faces, hair, build, "
         "and for any animal the breed, coat colour and markings. All of them must appear. "
+        "Where several photos show the same one, go by what the photos agree on: face "
+        "shape, eyes, nose, smile and hairline, rather than any one photo's expression, "
+        "hat or glasses. "
         "Use the references only for likeness, not for the setting or clothing. "
         "Landscape 3:2 composition. No text, captions or watermarks in the image.",
     ]
@@ -515,7 +538,8 @@ def run(args):
     if args.source:
         refs = refs_from_files(args.source, subjects)
     else:
-        refs = pick_from_folder(subjects, rng) or pick_from_library(
+        portraits = profile.get("reference_portraits", REFERENCE_PORTRAITS)
+        refs = pick_from_folder(subjects, rng, portraits) or pick_from_library(
             subjects, rng, open_library(profile), profile.get("photos_album")
         )
     prompt = build_prompt(subjects, refs, scene, style)
@@ -563,6 +587,150 @@ def people(args):
         sys.exit("No named people in this library. Name them in Photos > People & Pets first.")
     for name, count in list(known.items())[: args.limit]:
         print(f"{count:6}  {name}")
+
+
+# ---------- Gathering reference photos ----------
+
+
+def crop_square(source, dest, centre, side):
+    """Save the square of `source` around `centre` as a JPEG. `centre` and `side` are
+    fractions of the picture's width and height, and of its long edge. Returns the
+    square's size in pixels before any shrinking, or 0 if it could not be read.
+    """
+    import Quartz
+    from Foundation import NSURL
+
+    image_source = Quartz.CGImageSourceCreateWithURL(NSURL.fileURLWithPath_(str(source)), None)
+    if image_source is None:
+        return 0
+    # Read through the thumbnail call because it turns the picture upright.
+    image = Quartz.CGImageSourceCreateThumbnailAtIndex(image_source, 0, {
+        Quartz.kCGImageSourceCreateThumbnailFromImageAlways: True,
+        Quartz.kCGImageSourceCreateThumbnailWithTransform: True,
+        Quartz.kCGImageSourceThumbnailMaxPixelSize: 4096,
+    })
+    if image is None:
+        return 0
+    width, height = Quartz.CGImageGetWidth(image), Quartz.CGImageGetHeight(image)
+    pixels = int(min(side * max(width, height), width, height))
+    left = min(max(centre[0] * width - pixels / 2, 0), width - pixels)
+    top = min(max(centre[1] * height - pixels / 2, 0), height - pixels)
+    square = Quartz.CGImageCreateWithImageInRect(image, Quartz.CGRectMake(int(left), int(top), pixels, pixels))
+    with tempfile.NamedTemporaryFile(suffix=".png") as raw:
+        out = Quartz.CGImageDestinationCreateWithURL(NSURL.fileURLWithPath_(raw.name), "public.png", 1, None)
+        Quartz.CGImageDestinationAddImage(out, square, None)
+        if not Quartz.CGImageDestinationFinalize(out):
+            return 0
+        subprocess.run(
+            ["sips", "-s", "format", "jpeg", "-s", "formatOptions", "90", "-Z", str(min(pixels, PORTRAIT_MAX_PX)),
+             raw.name, "--out", str(dest)],
+            check=True, capture_output=True,
+        )
+    return pixels
+
+
+def gather(args):
+    """Fill refs/ from the Photos library: close-ups of each subject's face, cropped from
+    the clearest recent photos of them, and photos of everyone together.
+
+    A subject whose folder already has photos is left alone (they may be hand-picked)
+    unless --replace is given. Look through the result and delete any that are not them.
+    """
+    profile = load_profile()
+    subjects = profile["subjects"]
+    db = open_library(profile)
+    own_album = profile.get("photos_album")
+    keys = [s.get("photos_person_id") or s["photos_name"] for s in subjects]
+    recent = dt.datetime.now().year - GATHER_YEARS
+
+    faces = {key: [] for key in keys}  # (face, photo) for each subject
+    groups = []  # (photo, the subjects' faces in it)
+    for photo in db.photos(movies=False):
+        if photo.screenshot or photo.hidden or own_album in photo.albums or not local_file(photo):
+            continue
+        shown = {}
+        for face in photo.face_info:
+            person = face.person_info
+            key = person and (person.uuid if person.name.startswith("_") else person.name)
+            if key in faces:
+                shown[key] = face
+                faces[key].append((face, photo))
+        if len(shown) == len(keys):
+            groups.append((photo, list(shown.values())))
+
+    def newest_and_clearest(photo, quality):
+        return (photo.date.year >= recent, quality)
+
+    def folder_for(name):
+        folder = REFS / name
+        if images_in(folder) and not args.replace:
+            print(f"{name}: has photos already, left alone (--replace to start again)")
+            return None
+        folder.mkdir(parents=True, exist_ok=True)
+        for old in images_in(folder):
+            old.unlink()
+        return folder
+
+    for subject, key in zip(subjects, keys):
+        folder = folder_for(subject["name"].lower())
+        if folder is None:
+            continue
+        usable = [
+            (face, photo) for face, photo in faces[key]
+            if face.size >= GATHER_MIN_FACE and abs(face.yaw or 0) <= GATHER_MAX_TURN
+            and face.glasses_type != SUNGLASSES and face.eye_state != EYES_CLOSED
+        ]
+        usable.sort(key=lambda pair: newest_and_clearest(pair[1], pair[0].quality or 0), reverse=True)
+        days = set()
+        for face, photo in usable:
+            if len(days) == GATHER_PORTRAITS:
+                break
+            day = photo.date.date()
+            if day in days:  # one a day, for different light, hair and clothes
+                continue
+            # Photos measures from the bottom-left of the upright picture. The square sits
+            # a little below the face's centre, to take in the shoulders and all the hair.
+            side = face.size * PORTRAIT_FACES_WIDE
+            longest = max(photo.width, photo.height)
+            centre = (face.center_x, 1 - face.center_y + 0.15 * side * longest / photo.height)
+            # Skip a face cut off by the photo's edge, and any square that would take in
+            # part of someone else's face and muddle who the close-up is of.
+            reach = face.size * longest / 2
+            if not (reach <= face.center_x * photo.width <= photo.width - reach
+                    and reach <= face.center_y * photo.height <= photo.height - reach):
+                continue
+            if any(
+                abs(other.center_x - centre[0]) * photo.width < (side + other.size) * longest / 2
+                and abs(1 - other.center_y - centre[1]) * photo.height < (side + other.size) * longest / 2
+                for other in photo.face_info if other.uuid != face.uuid
+            ):
+                continue
+            dest = folder / f"{day}-{photo.uuid[:8]}.jpg"
+            if crop_square(local_file(photo), dest, centre, side) >= PORTRAIT_MIN_PX:
+                days.add(day)
+            else:
+                dest.unlink(missing_ok=True)
+        print(f"{subject['name']}: {len(days)} close-ups in {folder}")
+
+    folder = folder_for("together")
+    if folder is not None:
+        usable = [
+            (photo, min(face.size for face in shown), min(face.quality or 0 for face in shown))
+            for photo, shown in groups
+        ]
+        usable = [entry for entry in usable if entry[1] >= GATHER_MIN_FACE_TOGETHER]
+        usable.sort(key=lambda entry: newest_and_clearest(entry[0], entry[1] * (1 + entry[2])), reverse=True)
+        days = set()
+        for photo, _, _ in usable:
+            if len(days) == GATHER_TOGETHER:
+                break
+            day = photo.date.date()
+            if day in days or long_edge(local_file(photo)) < REFERENCE_MIN_PX:
+                continue
+            prepare_reference(local_file(photo), folder / f"{day}-{photo.uuid[:8]}.jpg")
+            days.add(day)
+        print(f"Together: {len(days)} photos in {folder}")
+    print(f"Look through {REFS} and delete any photo that does not show who it should.")
 
 
 class Generator:
@@ -701,6 +869,10 @@ def main():
     people_parser = commands.add_parser("people", help="list the people named in the Photos library")
     people_parser.add_argument("--limit", type=int, default=30, help="how many names to show")
     people_parser.set_defaults(handler=people)
+
+    gather_parser = commands.add_parser("gather", help="collect reference photos from Photos into refs/")
+    gather_parser.add_argument("--replace", action="store_true", help="start again where refs/ already has photos")
+    gather_parser.set_defaults(handler=gather)
 
     serve_parser = commands.add_parser("serve", help="serve out/ to the Portal")
     serve_parser.add_argument("--port", type=int, default=PORT)
