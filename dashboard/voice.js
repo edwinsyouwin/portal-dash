@@ -5,6 +5,7 @@
 import config from "./config.js";
 import { handleCommand } from "./control.js";
 import { serverUrl } from "./server.js";
+import { duckVideo } from "./youtube.js";
 
 const SAMPLE_RATE = 24_000;
 // Start each run of speech this far ahead, to ride out uneven arrival over Wi-Fi.
@@ -209,6 +210,7 @@ function onMessage({ data }) {
       // Also sent when a call changes between voice and video.
       const switching = inCall && message.video !== videoCall;
       inCall = true;
+      duckVideo(true); // a YouTube video keeps playing, quietly
       videoCall = Boolean(message.video);
       if (!videoCall) stopVideo();
       flush();
@@ -223,6 +225,7 @@ function onMessage({ data }) {
 
 function callEnded(error) {
   inCall = false;
+  duckVideo(false);
   videoCall = false;
   clearTimeout(listenTimer);
   stopVideo();

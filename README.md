@@ -148,6 +148,17 @@ Portal shows its last copy while the Mac is away, but changes need the Mac. Like
 pictures, the list is served unauthenticated on the home network. `tasks: false` in
 `dashboard/config.js` hides it.
 
+## YouTube
+
+With `youtube: true` in `dashboard/config.js`, a play button opens a search box; pick a
+result and it plays in the middle of the screen through the Portal's speakers, in
+YouTube's own embedded player (so with YouTube's ads and controls). A pasted YouTube link
+plays directly. Searching needs `YOUTUBE_API_KEY` in `.env`: a free YouTube Data API v3
+key, good for about 100 searches a day; the Mac does the searching, so the key never
+reaches the Portal. Muse can play something by name and pause, resume or stop it
+(`dashboard.video.play`, `dashboard.video.control`). While you are talking to Muse the
+video is turned down, not stopped. Some videos do not allow embedding and will not play.
+
 ## If the Mac changes network
 
 Settings (the sliders button) shows whether the Mac is answering and has a "Look for the
@@ -203,7 +214,8 @@ Muse and the screen:
   the weather, show the picture alone, or go back), `dashboard.timer.start` and
   `dashboard.timer.cancel` (a countdown on screen that chimes), and
   `dashboard.picture.new` and `dashboard.picture.browse` (earlier pictures), and
-  `dashboard.tasks.list`, `.add`, `.update` and `.remove` (the task list). The Mac
+  `dashboard.tasks.list`, `.add`, `.update` and `.remove` (the task list), and
+  `dashboard.video.play` and `.control` (YouTube). The Mac
   checks every parameter, and the dashboard checks again.
   Enlarged views go back by themselves after three minutes, or on a tap outside them.
 - Asked in text (the Muse app), Muse runs them within seconds. In a call it currently

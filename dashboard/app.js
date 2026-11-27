@@ -4,6 +4,7 @@ import { startControl } from "./control.js";
 import { startPhotos } from "./photo.js";
 import { startSettings } from "./settings.js";
 import { startVoice } from "./voice.js";
+import { startYouTube } from "./youtube.js";
 
 const $ = (id) => document.getElementById(id);
 const metric = config.units === "metric";
@@ -240,3 +241,4 @@ startAgenda();
 startVoice();
 startControl();
 startSettings();
+startYouTube();

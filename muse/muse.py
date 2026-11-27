@@ -58,6 +58,7 @@ import threading
 import time
 import types
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -102,6 +103,7 @@ PICTURES = ("previous", "next", "latest")
 MAX_TIMER_S = 24 * 3600
 MAX_LABEL_CHARS = 40
 MAX_REQUEST_CHARS = 1000
+MAX_QUERY_CHARS = 100
 PHOTO_SERVER = "http://127.0.0.1:8766"  # photoflow/flow.py serve, on this Mac
 
 # The commands registered with Muse, in the SDK's format. dashboard_command() checks every
@@ -137,6 +139,18 @@ COMMANDS = {
         "description": "Change the background to another of the AI pictures already made: the "
                        "one before the one showing, the one after, or the latest.",
         "required": {"to": {"type": "string", "description": "previous, next or latest"}},
+        "timeout_ms": 5000,
+    },
+    "dashboard.video.play": {
+        "description": "Find a video on YouTube and play it on the Portal's screen, with sound. "
+                       "Returns the title of what started playing.",
+        "required": {"query": {"type": "string",
+                               "description": "What to search for, such as a song, artist or topic."}},
+        "timeout_ms": 15000,
+    },
+    "dashboard.video.control": {
+        "description": "Pause, resume or stop the YouTube video on the Portal's screen.",
+        "required": {"action": {"type": "string", "description": "pause, resume or stop"}},
         "timeout_ms": 5000,
     },
     "dashboard.tasks.list": {
@@ -194,6 +208,10 @@ Use the commands to show what you are talking about, without being asked each ti
   lists today and tomorrow, `week` and `month` show a grid of days), `weather` for the
   forecast, `tasks` for the to-do list, `picture` for the picture alone, and `home` when
   the topic moves on.
+- `dashboard.video.play` when asked to play or put on something (music, a video, a
+  channel), with what they asked for as the `query`; say the title that started.
+  `dashboard.video.control` to pause, resume or stop it. The video is turned down, not
+  stopped, while you are talking with them.
 - `dashboard.tasks.*` to keep the household's to-do list: read it with `list` before
   changing or removing a task, so that you have its id; mark things done rather than
   removing them unless asked to remove. Say what you changed.
@@ -888,11 +906,36 @@ def dashboard_command(name, params):
         return {"name": "timer", "seconds": seconds, "label": label}
     if name == "dashboard.timer.cancel":
         return {"name": "timer", "seconds": 0}
+    if name == "dashboard.video.play":
+        return find_video(params.get("query"))
+    if name == "dashboard.video.control":
+        if params.get("action") not in VIDEO_ACTIONS:
+            raise ValueError(f"action must be one of: {', '.join(VIDEO_ACTIONS)}")
+        return {"name": "video", "action": params["action"]}
     if name == "dashboard.picture.browse":
         if params.get("to") not in PICTURES:
             raise ValueError(f"to must be one of: {', '.join(PICTURES)}")
         return {"name": "picture", "to": params["to"]}
     raise ValueError("unsupported command")
+
+
+VIDEO_ACTIONS = ("pause", "resume", "stop")
+
+
+def find_video(query):
+    """The best YouTube match for `query`, found by the photo server on this Mac (which
+    holds the API key), as a message for the dashboard's player."""
+    if not isinstance(query, str) or not query.strip():
+        raise ValueError("say what to play")
+    address = f"{PHOTO_SERVER}/youtube/search?" + urllib.parse.urlencode({"q": query[:MAX_QUERY_CHARS]})
+    try:
+        with urllib.request.urlopen(address, timeout=12) as response:
+            videos = json.load(response)["videos"]
+    except urllib.error.HTTPError as error:
+        raise ValueError(str(json.load(error).get("error") or "the search failed")) from None
+    if not videos:
+        raise ValueError("nothing on YouTube matched that")
+    return {"name": "video", "action": "play", "id": videos[0]["id"], "title": videos[0]["title"][:120]}
 
 
 def tasks_request(change=None):
@@ -944,7 +987,8 @@ CHANGE_TIMEOUT_S = 480
 CHANGE_BUDGET_USD = "3"
 MAX_CHANGED_LINES = 1500
 # The only hosts the dashboard's own code may name; a change adding another is refused.
-KNOWN_HOSTS = {"api.open-meteo.com", "appassets.androidplatform.net", "www.w3.org"}
+KNOWN_HOSTS = {"api.open-meteo.com", "appassets.androidplatform.net", "www.w3.org",
+               "www.youtube-nocookie.com"}
 # launchd gives a bare PATH; these are where Homebrew and installers put claude, node and git.
 TOOL_PATH = os.pathsep.join(
     ["/opt/homebrew/bin", "/usr/local/bin", str(Path("~/.local/bin").expanduser()), "/usr/bin", "/bin"])
@@ -1140,6 +1184,8 @@ class ControlLink:
             return {"ok": False, "error": "the dashboard could not do that"}
         if not reached:
             return {"ok": False, "error": "the Portal's dashboard is not connected"}
+        if message.get("action") == "play":
+            return {"ok": True, "payload": {"playing": message["title"]}}
         return {"ok": True, "payload": {"done": True}}
 
     async def _deliver(self, message):

@@ -89,6 +89,11 @@ PRIVATE_FILES = {"config.js"}
 TASKS_FILE = Path("~/.config/portal-dash/tasks.json").expanduser()
 MAX_TASKS = 100
 MAX_TASK_CHARS = 120
+# YouTube search for the dashboard's player, with YOUTUBE_API_KEY from .env. A search
+# costs 100 of the 10,000 units Google allows a day without charge.
+YOUTUBE_SEARCH = "https://www.googleapis.com/youtube/v3/search"
+YOUTUBE_RESULTS = 6
+MAX_QUERY_CHARS = 100
 # What /status.json answers with, so a dashboard looking for the Mac knows it found it.
 SERVICE = "portal-dash"
 
@@ -986,6 +991,42 @@ class Tasks:
         return text
 
 
+def youtube_search(query):
+    """Videos matching `query` that may be embedded: [{"id", "title", "channel", "thumbnail"}].
+    Raises ValueError with a reason fit to show."""
+    import html
+
+    import httpx
+
+    query = " ".join(str(query).split())[:MAX_QUERY_CHARS]
+    key = read_env().get("YOUTUBE_API_KEY")
+    if not query:
+        raise ValueError("say what to look for")
+    if not key:
+        raise ValueError("YouTube search needs YOUTUBE_API_KEY in .env")
+    try:
+        response = httpx.get(YOUTUBE_SEARCH, timeout=10, params={
+            "part": "snippet", "type": "video", "videoEmbeddable": "true", "safeSearch": "moderate",
+            "maxResults": YOUTUBE_RESULTS, "q": query, "key": key,
+        })
+    except httpx.HTTPError:
+        raise ValueError("YouTube could not be reached") from None  # the error's text has the key in it
+    if response.status_code != 200:
+        reasons = [e.get("reason") for e in response.json().get("error", {}).get("errors", [])]
+        raise ValueError("today's YouTube searches are used up" if "quotaExceeded" in reasons
+                         else "YouTube refused the search")
+    return [
+        {
+            "id": item["id"]["videoId"],
+            "title": html.unescape(item["snippet"]["title"]),
+            "channel": html.unescape(item["snippet"]["channelTitle"]),
+            "thumbnail": item["snippet"]["thumbnails"]["medium"]["url"],
+        }
+        for item in response.json().get("items", [])
+        if item.get("id", {}).get("videoId")  # now and then a channel comes back among the videos
+    ]
+
+
 def deploy_key():
     """The key that signs dashboard files for the Portal, made on first use."""
     if not DEPLOY_KEY.exists():
@@ -1033,6 +1074,14 @@ class Handler(SimpleHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path == "/status.json":
             self.send_json(200, {"service": SERVICE, **self.generator.status()})
+        elif path == "/youtube/search":
+            from urllib.parse import parse_qs, urlsplit
+
+            try:
+                query = parse_qs(urlsplit(self.path).query).get("q", [""])[0]
+                self.send_json(200, {"videos": youtube_search(query)})
+            except ValueError as error:
+                self.send_json(400, {"error": str(error)})
         elif path == "/tasks.json":
             self.send_json(200, {"tasks": self.tasks.list()})
         elif path == "/calendar.json":

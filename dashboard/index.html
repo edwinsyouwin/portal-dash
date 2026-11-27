@@ -45,6 +45,10 @@
         <path d="M21 9c1.6 9.6 5.4 13.4 15 15-9.6 1.6-13.4 5.4-15 15-1.6-9.6-5.4-13.4-15-15 9.6-1.6 13.4-5.4 15-15z"/>
         <path d="M38 5v10M33 10h10"/>
       </symbol>
+      <symbol id="i-play" viewBox="0 0 48 48">
+        <rect x="5" y="10" width="38" height="28" rx="8"/>
+        <path d="M20 17.5v13l11-6.5z"/>
+      </symbol>
       <symbol id="i-settings" viewBox="0 0 48 48">
         <path d="M7 13h13M30 13h11M7 24h4M21 24h20M7 35h18M35 35h6"/>
         <circle cx="25" cy="13" r="5"/>
@@ -120,10 +124,29 @@
     <button type="button" id="video-button" aria-label="Video call with Muse" hidden>
       <svg class="icon"><use href="#i-video"/></svg>
     </button>
+    <button type="button" id="tube-button" aria-label="YouTube" hidden>
+      <svg class="icon"><use href="#i-play"/></svg>
+    </button>
     <button type="button" id="settings-button" aria-label="Settings" hidden>
       <svg class="icon"><use href="#i-settings"/></svg>
     </button>
     <span id="generate-note" class="generate-note"></span>
+  </div>
+
+  <!-- YouTube (youtube.js): a search panel opened by its button, and the player. -->
+  <div class="settings tube-panel" id="tube-panel" hidden>
+    <form class="task-add" id="tube-search">
+      <input maxlength="100" placeholder="Search YouTube, or paste a link" enterkeyhint="search">
+      <button type="submit">Search</button>
+    </form>
+    <div id="tube-results"></div>
+  </div>
+  <div class="tube-player" id="tube-player" hidden>
+    <div class="tube-bar">
+      <span id="tube-title"></span>
+      <button type="button" id="tube-close" aria-label="Close the video">×</button>
+    </div>
+    <iframe id="tube-frame" src="about:blank" allow="autoplay; encrypted-media" referrerpolicy="strict-origin-when-cross-origin"></iframe>
   </div>
 
   <!-- Settings (settings.js), opened by the sliders button. Tap outside to close. -->

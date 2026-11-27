@@ -555,6 +555,64 @@ body:not(.has-photo) .day .event:nth-of-type(n + 3) { display: none; }
 .settings .tabs button { padding: 0.9rem 0; font-size: 1.25rem; }
 .settings .tabs button.on { background: var(--accent); color: #0b0d12; }
 
+/* ---------- YouTube (youtube.js) ---------- */
+
+/* The search panel sits near the top: under the round buttons, clear of the on-screen keyboard. */
+.settings.tube-panel { top: 7.5rem; transform: translateX(-50%); width: 46rem; padding: 1.4rem 1.6rem; }
+.tube-panel .task-add { margin: 0; }
+.tube-panel .task-add input { font-size: 1.4rem; padding: 0.8rem 1rem; }
+.tube-panel .task-add button { font-size: 1.3rem; padding: 0.8rem 1.4rem; }
+#tube-results { display: grid; gap: 0.5rem; margin-top: 1rem; max-height: 58vh; overflow-y: auto; }
+#tube-results:empty { display: none; }
+
+.tube-result {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.4rem;
+  border: 0;
+  border-radius: 0.8rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+
+.tube-result img { flex: none; width: 10rem; aspect-ratio: 16 / 9; border-radius: 0.5rem; object-fit: cover; }
+.tube-result span { display: grid; gap: 0.2rem; min-width: 0; }
+.tube-result b { font-size: 1.25rem; font-weight: 500; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.tube-result small { font-size: 1rem; color: var(--muted); }
+
+.tube-player {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 4;
+  width: min(84vw, calc((100vh - 9rem) * 16 / 9));
+  border-radius: 1.2rem;
+  overflow: hidden;
+  background: #0b0d12;
+  box-shadow: 0 1rem 4rem rgba(0, 0, 0, 0.6);
+}
+
+.tube-player[hidden] { display: none; }
+.tube-player iframe { display: block; width: 100%; aspect-ratio: 16 / 9; border: 0; }
+.tube-bar { display: flex; align-items: center; gap: 1rem; padding: 0.5rem 0.6rem 0.5rem 1.2rem; }
+#tube-title { flex: 1; min-width: 0; font-size: 1.2rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+#tube-close {
+  flex: none;
+  width: 3rem;
+  height: 3rem;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  color: var(--text);
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }

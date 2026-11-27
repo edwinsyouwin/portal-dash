@@ -17,6 +17,8 @@ export default {
   photos: { pollMinutes: 10 },
   // A shared to-do list, as a tab of the calendar card; kept on the Mac.
   tasks: true,
+  // A YouTube button: search (needs YOUTUBE_API_KEY in the Mac's .env) and play here.
+  youtube: true,
 
   // Google Calendar agenda: today plus this many following days. Set to null to hide it.
   calendar: { pollMinutes: 5, daysAhead: 1 },
