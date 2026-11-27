@@ -29,7 +29,7 @@ const OUTLINE_OVERLAP = 0.03;
 // Space between the weather card and the agenda under it, in rem.
 const STACK_GAP = 1;
 
-let holdButtonsUntil = 0;
+const BUTTONS_CORNER = "tr";
 
 // Boxes around the faces and animals, as fractions of the picture (from the manifest).
 let subjects = [];
@@ -94,12 +94,12 @@ function place(element, corners, rects, blocked) {
 }
 
 /** Weather with the agenda directly under it, placed in a corner as one block. */
-function placeCards(rects) {
+function placeCards(rects, blocked) {
   const top = sizeOf(weather);
   const bottom = agenda.hidden ? { w: 0, h: 0 } : sizeOf(agenda);
   const gap = top.h && bottom.h ? STACK_GAP * remPx() : 0;
   const size = { w: Math.max(top.w, bottom.w), h: top.h + gap + bottom.h };
-  const best = pick(size, ["br", "bl", "tr", "tl"], rects, []);
+  const best = pick(size, ["br", "bl", "tl"], rects, blocked);
   const atTop = best.corner[0] === "t";
   weather.dataset.corner = agenda.dataset.corner = best.corner;
   // Whichever card is further from the screen edge steps past the other one.
@@ -111,16 +111,13 @@ function placeCards(rects) {
 function layout() {
   if (!document.body.classList.contains("has-photo")) return;
   const rects = subjectRects();
-  const cards = placeCards(rects);
-  const time = place(clock, ["tl", "tr", "bl", "br"], rects, [cards.rect]);
+  // The buttons are always top right, so they are where the hand expects them; the
+  // cards and the clock take the other corners.
+  const buttons = cornerRect(sizeOf(generate), BUTTONS_CORNER);
+  const cards = placeCards(rects, [buttons]);
+  const time = place(clock, ["tl", "bl", "br"], rects, [buttons, cards.rect]);
   const share = time.covered / (time.rect.w * time.rect.h || 1);
   clock.classList.toggle("outline", share > OUTLINE_OVERLAP);
-  // While someone is going through the pictures the buttons stay under their finger,
-  // unless the clock or the cards now need that corner.
-  const taken = [cards.rect, time.rect];
-  const held = Date.now() < holdButtonsUntil && generate.dataset.corner;
-  if (held && !taken.some((other) => overlap(cornerRect(sizeOf(generate), held), other))) return;
-  place(generate, ["bl", "tr", "tl", "br"], rects, taken);
 }
 
 // The cards grow when their data arrives and the clock changes width with the time.
@@ -263,7 +260,6 @@ document.getElementById("generate-button").addEventListener("click", (event) => 
 // ---------- Earlier pictures ----------
 
 const BROWSE_NOTE_MS = 4_000;
-const HOLD_BUTTONS_MS = 8_000;
 // A touch that travels this far sideways, and mostly sideways, is a swipe.
 const SWIPE_PX = 120;
 let browsing = false;
@@ -286,8 +282,6 @@ export async function browsePictures(to) {
     const step = to === "next" ? -1 : 1;
     const index = to === "latest" ? 0 : (at + step + history.length) % history.length;
     const meta = metaOf(history[index]);
-    holdButtonsUntil = Date.now() + HOLD_BUTTONS_MS;
-    setTimeout(layout, HOLD_BUTTONS_MS + 100);
     await show(meta);
     await remember(index ? null : meta, index ? meta : null);
     const which = index ? dayOf(meta.date) : "newest";
