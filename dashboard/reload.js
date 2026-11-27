@@ -1,7 +1,8 @@
 // Keeps the dashboard's files current without the USB cable. With live updates on
 // (scripts/live.sh) the shell app takes the files from the Mac each time the page loads;
 // this asks the Mac now and then which version it has (the last commit to dashboard/)
-// and loads the page afresh when that has changed.
+// and loads the page afresh when that has changed. (scripts/push.sh does not wait for
+// this: it has the Muse server tell the page to reload at once.)
 //
 // Loaded by its own script tag and kept free of the rest of the dashboard, so that a
 // change which breaks the page can still be replaced by one that mends it.
