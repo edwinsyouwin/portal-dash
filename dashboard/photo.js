@@ -150,10 +150,12 @@ function display(src, meta) {
   layout();
 }
 
+/** Shows a picture from the cache; false if it is not there. */
 async function showCached(meta) {
   const cache = await caches.open(CACHE_NAME);
   const response = await cache.match(meta.url);
   if (response) display(URL.createObjectURL(await response.blob()), meta);
+  return Boolean(response);
 }
 
 async function fetchManifest() {
@@ -204,17 +206,36 @@ async function remember(newest, chosen) {
   }
 }
 
+// One picture is fetched and remembered at a time: a check for a new picture and a step
+// to an earlier one, run together, could each drop the other's picture from the cache.
+let loading = false;
+
 async function poll() {
+  if (loading) return;
+  loading = true;
   try {
     const { current } = await fetchManifest();
-    if (!current || current.id === readMeta()?.id) return;
+    // Nothing new, unless there is no picture up at all (its copy here was lost).
+    const showing = document.body.classList.contains("has-photo");
+    if (!current || (showing && current.id === readMeta()?.id)) return;
     // A new picture takes over from whichever earlier one was being looked at.
     const meta = metaOf(current);
     await show(meta);
     await remember(meta, null);
   } catch (error) {
     console.warn("Photo refresh failed:", error);
+  } finally {
+    loading = false;
   }
+}
+
+/** At start: the picture that was up last, or failing that the newest one kept here. */
+async function restore() {
+  const chosen = readMeta(SHOWN_KEY);
+  if (chosen && (await showCached(chosen).catch(() => false))) return;
+  localStorage.removeItem(SHOWN_KEY); // its copy is gone; forget the choice
+  const newest = readMeta();
+  if (newest) await showCached(newest).catch(() => false);
 }
 
 // ---------- "New picture" button ----------
@@ -262,7 +283,6 @@ document.getElementById("generate-button").addEventListener("click", (event) => 
 const BROWSE_NOTE_MS = 4_000;
 // A touch that travels this far sideways, and mostly sideways, is a swipe.
 const SWIPE_PX = 120;
-let browsing = false;
 
 const dayOf = (date) =>
   new Date(`${date}T12:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -272,8 +292,8 @@ const dayOf = (date) =>
  * one on screen), "next" or "latest". Going past either end comes round to the other.
  */
 export async function browsePictures(to, quiet = false) {
-  if (browsing || !config.server || !config.photos) return;
-  browsing = true;
+  if (loading || !config.server || !config.photos) return;
+  loading = true;
   // A picture chosen by hand gets its full time before the next automatic change.
   if (!quiet) startCycle();
   try {
@@ -292,7 +312,7 @@ export async function browsePictures(to, quiet = false) {
     console.warn("Could not show another picture:", error);
     if (!quiet) note("Can't reach the Mac", NOTE_MS);
   } finally {
-    browsing = false;
+    loading = false;
   }
 }
 
@@ -376,9 +396,8 @@ export function startPhotos() {
   generate.hidden = false;
   document.getElementById("generate-button").hidden = false;
   document.getElementById("pager").hidden = false;
-  const meta = readMeta(SHOWN_KEY) ?? readMeta();
-  if (meta && canCache) showCached(meta).catch(() => {});
-  poll();
+  // Show what is kept here straight away, then ask the Mac whether there is anything newer.
+  (canCache ? restore() : Promise.resolve()).then(poll);
   setInterval(poll, config.photos.pollMinutes * 60_000);
   startCycle();
 }
