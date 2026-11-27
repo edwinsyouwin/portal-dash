@@ -10,6 +10,7 @@ const EMBED = "https://www.youtube-nocookie.com";
 const VIDEO_ID = /^[\w-]{11}$/;
 // A pasted link works as well as a search.
 const LINK = /(?:youtu\.be\/|[?&]v=|\/embed\/|\/shorts\/)([\w-]{11})/;
+const FULL_KEY = "tube-full"; // whether the player was last left filling the screen
 // How loud the video stays while someone is talking to Muse, of 100.
 const DUCKED = 12;
 
@@ -21,6 +22,7 @@ const results = document.getElementById("tube-results");
 const player = document.getElementById("tube-player");
 const frame = document.getElementById("tube-frame");
 const title = document.getElementById("tube-title");
+const fullButton = document.getElementById("tube-full");
 
 let ducked = false;
 
@@ -45,6 +47,18 @@ export function stopVideo() {
   frame.src = "about:blank";
   player.hidden = true;
   button.classList.remove("on");
+}
+
+/** Fills the screen with the player, or puts it back in its window; remembered. */
+export function fullScreenVideo(full) {
+  player.classList.toggle("full", full);
+  fullButton.setAttribute("aria-label", full ? "Leave full screen" : "Full screen");
+  fullButton.querySelector("use").setAttribute("href", full ? "#i-shrink" : "#i-expand");
+  try {
+    localStorage.setItem(FULL_KEY, full ? "1" : "");
+  } catch {
+    // The choice lasts until the dashboard restarts.
+  }
 }
 
 export const pauseVideo = () => tell("pauseVideo");
@@ -132,6 +146,12 @@ export function startYouTube() {
     if (query) search(query);
   });
   document.getElementById("tube-close").addEventListener("click", stopVideo);
+  fullButton.addEventListener("click", () => fullScreenVideo(!player.classList.contains("full")));
+  try {
+    fullScreenVideo(Boolean(localStorage.getItem(FULL_KEY)));
+  } catch {
+    // Starts in its window.
+  }
   for (const layer of [panel, player]) layer.addEventListener("click", (event) => event.stopPropagation());
   // A tap anywhere else closes the search panel and does nothing more.
   document.addEventListener(

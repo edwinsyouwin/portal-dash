@@ -601,6 +601,20 @@ body:not(.has-photo) .day .event:nth-of-type(n + 3) { display: none; }
 .tube-bar { display: flex; align-items: center; gap: 1rem; padding: 0.5rem 0.6rem 0.5rem 1.2rem; }
 #tube-title { flex: 1; min-width: 0; font-size: 1.2rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
+/* Full screen: the whole display, over the round buttons too. */
+.tube-player.full {
+  inset: 0;
+  transform: none;
+  z-index: 6;
+  width: auto;
+  display: flex;
+  flex-direction: column;
+  border-radius: 0;
+}
+
+.tube-player.full iframe { flex: 1; aspect-ratio: auto; }
+
+#tube-full,
 #tube-close {
   flex: none;
   width: 3rem;
@@ -612,6 +626,9 @@ body:not(.has-photo) .day .event:nth-of-type(n + 3) { display: none; }
   font-size: 1.8rem;
   line-height: 1;
 }
+
+#tube-full { display: grid; place-items: center; padding: 0; }
+#tube-full .icon { width: 1.6rem; height: 1.6rem; }
 
 @keyframes spin {
   to { transform: rotate(360deg); }

@@ -49,6 +49,12 @@
         <rect x="5" y="10" width="38" height="28" rx="8"/>
         <path d="M20 17.5v13l11-6.5z"/>
       </symbol>
+      <symbol id="i-expand" viewBox="0 0 48 48">
+        <path d="M8 18V8h10M30 8h10v10M40 30v10H30M18 40H8V30"/>
+      </symbol>
+      <symbol id="i-shrink" viewBox="0 0 48 48">
+        <path d="M18 8v10H8M40 18H30V8M30 40V30h10M8 30h10v10"/>
+      </symbol>
       <symbol id="i-settings" viewBox="0 0 48 48">
         <path d="M7 13h13M30 13h11M7 24h4M21 24h20M7 35h18M35 35h6"/>
         <circle cx="25" cy="13" r="5"/>
@@ -144,6 +150,9 @@
   <div class="tube-player" id="tube-player" hidden>
     <div class="tube-bar">
       <span id="tube-title"></span>
+      <button type="button" id="tube-full" aria-label="Full screen">
+        <svg class="icon"><use href="#i-expand"/></svg>
+      </button>
       <button type="button" id="tube-close" aria-label="Close the video">×</button>
     </div>
     <iframe id="tube-frame" src="about:blank" allow="autoplay; encrypted-media" referrerpolicy="strict-origin-when-cross-origin"></iframe>

@@ -149,8 +149,10 @@ COMMANDS = {
         "timeout_ms": 15000,
     },
     "dashboard.video.control": {
-        "description": "Pause, resume or stop the YouTube video on the Portal's screen.",
-        "required": {"action": {"type": "string", "description": "pause, resume or stop"}},
+        "description": "Pause, resume or stop the YouTube video on the Portal's screen, or "
+                       "make it fill the screen or go back to its window.",
+        "required": {"action": {"type": "string",
+                                "description": "pause, resume, stop, fullscreen or window"}},
         "timeout_ms": 5000,
     },
     "dashboard.tasks.list": {
@@ -210,7 +212,8 @@ Use the commands to show what you are talking about, without being asked each ti
   the topic moves on.
 - `dashboard.video.play` when asked to play or put on something (music, a video, a
   channel), with what they asked for as the `query`; say the title that started.
-  `dashboard.video.control` to pause, resume or stop it. The video is turned down, not
+  `dashboard.video.control` to pause, resume or stop it, or to make it `fullscreen` or
+  put it back in its `window`. The video is turned down, not
   stopped, while you are talking with them.
 - `dashboard.tasks.*` to keep the household's to-do list: read it with `list` before
   changing or removing a task, so that you have its id; mark things done rather than
@@ -919,7 +922,7 @@ def dashboard_command(name, params):
     raise ValueError("unsupported command")
 
 
-VIDEO_ACTIONS = ("pause", "resume", "stop")
+VIDEO_ACTIONS = ("pause", "resume", "stop", "fullscreen", "window")
 
 
 def find_video(query):

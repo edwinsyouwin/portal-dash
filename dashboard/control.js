@@ -6,7 +6,7 @@
 import { setAgendaView } from "./agenda.js";
 import { browsePictures } from "./photo.js";
 import { refreshTasks, typing } from "./tasks.js";
-import { pauseVideo, playVideo, resumeVideo, stopVideo } from "./youtube.js";
+import { fullScreenVideo, pauseVideo, playVideo, resumeVideo, stopVideo } from "./youtube.js";
 
 const FOCUS_MS = 3 * 60_000; // enlarged views go back to normal by themselves
 const DONE_MS = 2 * 60_000; // how long "Time's up" stays if nobody taps it
@@ -177,6 +177,8 @@ export function handleCommand(command) {
     } else if (command.action === "pause") pauseVideo();
     else if (command.action === "resume") resumeVideo();
     else if (command.action === "stop") stopVideo();
+    else if (command.action === "fullscreen") fullScreenVideo(true);
+    else if (command.action === "window") fullScreenVideo(false);
   } else if (command.name === "tasks") {
     refreshTasks(); // Muse changed the list on the Mac
   } else if (command.name === "notice" && typeof command.text === "string") {

@@ -153,7 +153,7 @@ pictures, the list is served unauthenticated on the home network. `tasks: false`
 With `youtube: true` in `dashboard/config.js`, a play button opens a search box; pick a
 result and it plays in the middle of the screen through the Portal's speakers, in
 YouTube's own embedded player (so with YouTube's ads and controls). A pasted YouTube link
-plays directly. Searching needs `YOUTUBE_API_KEY` in `.env`: a free YouTube Data API v3
+plays directly, and the arrows button on the player makes it fill the screen. Searching needs `YOUTUBE_API_KEY` in `.env`: a free YouTube Data API v3
 key, good for about 100 searches a day; the Mac does the searching, so the key never
 reaches the Portal. Muse can play something by name and pause, resume or stop it
 (`dashboard.video.play`, `dashboard.video.control`). While you are talking to Muse the
