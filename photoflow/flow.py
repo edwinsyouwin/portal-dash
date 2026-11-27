@@ -1092,7 +1092,10 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?")[0]
         if path == "/status.json":
-            self.send_json(200, {"service": SERVICE, **self.generator.status()})
+            # With the newest picture's id, so a dashboard notices a new one within seconds.
+            current = load_manifest()["current"]
+            picture = current["id"] if current else None
+            self.send_json(200, {"service": SERVICE, "picture": picture, **self.generator.status()})
         elif path == "/youtube/search":
             from urllib.parse import parse_qs, urlsplit
 

@@ -229,6 +229,20 @@ async function poll() {
   }
 }
 
+// Between the full checks, a much lighter one asks the Mac only for the newest picture's
+// name, so that a picture made there shows here within seconds.
+const WATCH_MS = 15_000;
+
+async function watch() {
+  try {
+    const response = await fetch(`${serverUrl()}/status.json`, { cache: "no-store" });
+    const { picture } = await response.json();
+    if (picture && picture !== readMeta()?.id) poll();
+  } catch {
+    // The Mac is away; the next full check will say so if it matters.
+  }
+}
+
 /** At start: the picture that was up last, or failing that the newest one kept here. */
 async function restore() {
   const chosen = readMeta(SHOWN_KEY);
@@ -399,5 +413,6 @@ export function startPhotos() {
   // Show what is kept here straight away, then ask the Mac whether there is anything newer.
   (canCache ? restore() : Promise.resolve()).then(poll);
   setInterval(poll, config.photos.pollMinutes * 60_000);
+  setInterval(watch, WATCH_MS);
   startCycle();
 }
