@@ -27,7 +27,9 @@ memories = false
 # Places (as Photos names them) never to use as a memory. "Home" is always skipped.
 memory_skip = []
 
-# What you love doing, for the model to draw on where it fits the place.
+# What you love doing. Each picture is told two of these, picked at random, to use if
+# they suit the place. Keep them broad: a specific thing named here ("ramen") will keep
+# turning up in the pictures.
 interests = [
   "long hikes with a view at the end",
   "trying the local food",

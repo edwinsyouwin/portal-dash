@@ -71,6 +71,7 @@ REFERENCE_PORTRAITS = 2
 # through this many of its photos. An outing needs a few photos to count, and is not
 # used again until this many pictures later.
 MEMORY_PHOTOS = 2
+MEMORY_INTERESTS = 2  # how many of the profile's interests one picture is told about
 MEMORY_MIN_PHOTOS = 5
 MEMORY_REST = 30
 MEMORY_APART_S = 120
@@ -341,7 +342,10 @@ def build_prompt(subjects, refs, scene, style, memory=None, interests=()):
             "view, a different activity, all of them together. Do not copy a photo.",
         ]
         if interests:
-            lines.append(f"Things they love, to draw on where they fit the place: {', '.join(interests)}.")
+            lines.append(
+                f"Among the things they love: {', '.join(interests)}. Use one only if it "
+                "suits the place; otherwise let the place decide what they are doing."
+            )
     lines += ["", "The attached photos:"]
     lines += [f"- Photo {i}: {caption}." for i, (_, caption) in enumerate(refs, start=1)]
     lines += [f"- {s['name']} is {s['description']}." for s in subjects if s.get("description")]
@@ -640,7 +644,11 @@ def run(args):
         # Shown under the clock on the dashboard, and how the prompt introduces the picture.
         scene = f"a new memory from {memory['title']}"
         refs = refs + memory["photos"]
-    prompt = build_prompt(subjects, refs, scene, style, memory, profile.get("interests", ()))
+    # A couple of their interests each time, not the whole list: whatever is named in
+    # every prompt turns up in every picture.
+    interests = profile.get("interests", [])
+    interests = rng.sample(interests, min(MEMORY_INTERESTS, len(interests)))
+    prompt = build_prompt(subjects, refs, scene, style, memory, interests)
     print(f"Date:   {day}\nScene:  {scene}\nStyle:  {style}")
     for path, caption in refs:
         print(f"Photo:  {path} ({caption})")
