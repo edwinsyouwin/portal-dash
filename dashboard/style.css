@@ -612,6 +612,7 @@ body:not(.has-photo) .day .event:nth-of-type(n + 3) { display: none; }
   border-radius: 0;
 }
 
+.tube-player.full[hidden] { display: none; }
 .tube-player.full iframe { flex: 1; aspect-ratio: auto; }
 
 #tube-full,
