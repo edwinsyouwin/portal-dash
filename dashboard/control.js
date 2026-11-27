@@ -1,8 +1,10 @@
 // What Muse may do to the screen during a conversation (muse/muse.py, COMMANDS): enlarge
-// the calendar or the weather, show the picture alone, and run a countdown timer. The
+// the calendar or the weather, show the picture alone, go through the earlier pictures,
+// and run a countdown timer. The
 // Mac has already checked each command; this checks again and ignores anything else.
 // The Mac also says when the dashboard's own files have changed, to load them afresh.
 import { setAgendaView } from "./agenda.js";
+import { browsePictures } from "./photo.js";
 
 const FOCUS_MS = 3 * 60_000; // enlarged views go back to normal by themselves
 const DONE_MS = 2 * 60_000; // how long "Time's up" stays if nobody taps it
@@ -163,6 +165,8 @@ timer.addEventListener("click", (event) => {
 export function handleCommand(command) {
   if (command.name === "show" && typeof command.view === "string") {
     show(command.view, command.range);
+  } else if (command.name === "picture" && ["previous", "next", "latest"].includes(command.to)) {
+    browsePictures(command.to);
   } else if (command.name === "notice" && typeof command.text === "string") {
     notice(command.text.slice(0, 300), true);
   } else if (command.name === "reload") {

@@ -402,7 +402,9 @@ body:not(.has-photo) .day .event:nth-of-type(n + 3) { display: none; }
   gap: 0.8rem;
 }
 
-.generate[hidden], .generate button[hidden] { display: none; }
+.generate[hidden], .generate button[hidden], .generate .pager[hidden] { display: none; }
+/* The two arrows keep their order whichever side the buttons are on. */
+.generate .pager { display: flex; gap: 0.8rem; }
 .generate[data-corner$="r"] { flex-direction: row-reverse; }
 
 .generate button {

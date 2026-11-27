@@ -97,6 +97,7 @@ log = logging.getLogger("muse")
 
 VIEWS = ("home", "calendar", "weather", "picture")
 RANGES = ("today", "week", "month")
+PICTURES = ("previous", "next", "latest")
 MAX_TIMER_S = 24 * 3600
 MAX_LABEL_CHARS = 40
 MAX_REQUEST_CHARS = 1000
@@ -127,6 +128,12 @@ COMMANDS = {
     "dashboard.picture.new": {
         "description": "Make a new AI picture for the dashboard's background. Takes about half "
                        "a minute, costs a few cents, and is limited to a few a day.",
+        "timeout_ms": 5000,
+    },
+    "dashboard.picture.browse": {
+        "description": "Change the background to another of the AI pictures already made: the "
+                       "one before the one showing, the one after, or the latest.",
+        "required": {"to": {"type": "string", "description": "previous, next or latest"}},
         "timeout_ms": 5000,
     },
     "dashboard.change.request": {
@@ -161,6 +168,8 @@ Use the commands to show what you are talking about, without being asked each ti
   forecast, `picture` for the picture alone, and `home` when the topic moves on.
 - `dashboard.timer.start` when asked for a timer, with a short `label`. Say how long you set.
 - `dashboard.picture.new` only when asked for a new picture.
+- `dashboard.picture.browse` to go back (`previous`) or forward (`next`) through the
+  pictures made earlier, or to the `latest`. It makes nothing new and costs nothing.
 
 The commands only change the screen. They cannot read the calendar or the weather: use
 your own tools for the facts. Enlarged views go back to normal by themselves after a few
@@ -747,6 +756,12 @@ _HOME = re.compile(r"\b(go (back|home)|back to (the )?(dashboard|home|normal)|cl
                    r"hide (that|it|this)|(show|go to) (the )?(dashboard|home screen))\b")
 
 
+_EARLIER = ("previous", "last", "earlier", "older")
+_LATEST = ("latest", "newest", "today's")
+_OTHER_PICTURE = re.compile(
+    r"\b(" + "|".join(_EARLIER + _LATEST + ("next", "newer")) + r")\s+(?:picture|photo)\b")
+
+
 def spoken_commands(text):
     """Dashboard messages for the screen requests in something the caller said."""
     said = text.lower()
@@ -780,6 +795,10 @@ def spoken_commands(text):
             found.append({"name": "show", "view": "weather"})
         elif re.search(r"\b(picture|photo)\b", said) and "new" not in said:
             found.append({"name": "show", "view": "picture"})
+    other = _OTHER_PICTURE.search(said)
+    if other:
+        to = "previous" if other.group(1) in _EARLIER else "latest" if other.group(1) in _LATEST else "next"
+        found.append({"name": "picture", "to": to})
     return found
 
 
@@ -838,6 +857,10 @@ def dashboard_command(name, params):
         return {"name": "timer", "seconds": seconds, "label": label}
     if name == "dashboard.timer.cancel":
         return {"name": "timer", "seconds": 0}
+    if name == "dashboard.picture.browse":
+        if params.get("to") not in PICTURES:
+            raise ValueError(f"to must be one of: {', '.join(PICTURES)}")
+        return {"name": "picture", "to": params["to"]}
     raise ValueError("unsupported command")
 
 

@@ -44,6 +44,12 @@
       <symbol id="i-refresh" viewBox="0 0 48 48">
         <path d="M38 24a14 14 0 1 1-4.1-9.9M38 7v8h-8"/>
       </symbol>
+      <symbol id="i-previous" viewBox="0 0 48 48">
+        <path d="M29 10L15 24l14 14"/>
+      </symbol>
+      <symbol id="i-next" viewBox="0 0 48 48">
+        <path d="M19 10l14 14-14 14"/>
+      </symbol>
       <symbol id="i-video" viewBox="0 0 48 48">
         <rect x="6" y="13" width="24" height="22" rx="5"/>
         <path d="M30 21l11-6v18l-11-6z"/>
@@ -87,9 +93,17 @@
     </div>
   </main>
 
-  <!-- Round buttons: a new picture from the Mac, and a voice call to Muse. Each shows
-       only when its feature is configured. -->
+  <!-- Round buttons: earlier pictures, a new picture from the Mac, and a voice call to
+       Muse. Each shows only when its feature is configured. -->
   <div class="generate" id="generate" data-corner="bl" hidden>
+    <span class="pager" id="pager" hidden>
+      <button type="button" id="previous-button" aria-label="The picture before">
+        <svg class="icon"><use href="#i-previous"/></svg>
+      </button>
+      <button type="button" id="next-button" aria-label="The picture after">
+        <svg class="icon"><use href="#i-next"/></svg>
+      </button>
+    </span>
     <button type="button" id="generate-button" aria-label="Create a new picture" hidden>
       <svg class="icon"><use href="#i-refresh"/></svg>
     </button>

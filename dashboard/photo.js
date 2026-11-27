@@ -1,9 +1,12 @@
 // Daily picture: fetched from the Mac's photoflow server and kept in the browser cache,
-// so it stays on screen while the Mac is asleep or off.
+// so it stays on screen while the Mac is asleep or off. The arrow buttons, or a swipe
+// across the screen, go back through the earlier pictures the Mac still has.
 import config from "./config.js";
 
 const CACHE_NAME = "daily-photo";
-const META_KEY = "photo";
+const META_KEY = "photo"; // the newest picture
+// An earlier picture chosen to look at; it stays until a new one is made.
+const SHOWN_KEY = "photo-shown";
 const PEEK_MS = 60_000;
 
 const img = document.getElementById("photo-img");
@@ -25,6 +28,8 @@ const SUBJECT_MARGIN = 0.2;
 const OUTLINE_OVERLAP = 0.03;
 // Space between the weather card and the agenda under it, in rem.
 const STACK_GAP = 1;
+
+let holdButtonsUntil = 0;
 
 // Boxes around the faces and animals, as fractions of the picture (from the manifest).
 let subjects = [];
@@ -110,7 +115,12 @@ function layout() {
   const time = place(clock, ["tl", "tr", "bl", "br"], rects, [cards.rect]);
   const share = time.covered / (time.rect.w * time.rect.h || 1);
   clock.classList.toggle("outline", share > OUTLINE_OVERLAP);
-  place(generate, ["bl", "tr", "tl", "br"], rects, [cards.rect, time.rect]);
+  // While someone is going through the pictures the buttons stay under their finger,
+  // unless the clock or the cards now need that corner.
+  const taken = [cards.rect, time.rect];
+  const held = Date.now() < holdButtonsUntil && generate.dataset.corner;
+  if (held && !taken.some((other) => overlap(cornerRect(sizeOf(generate), held), other))) return;
+  place(generate, ["bl", "tr", "tl", "br"], rects, taken);
 }
 
 // The cards grow when their data arrives and the clock changes width with the time.
@@ -123,9 +133,9 @@ addEventListener("resize", layout);
 
 // ---------- Fetching and caching ----------
 
-function readMeta() {
+function readMeta(key = META_KEY) {
   try {
-    return JSON.parse(localStorage.getItem(META_KEY));
+    return JSON.parse(localStorage.getItem(key));
   } catch {
     return null;
   }
@@ -149,38 +159,62 @@ async function showCached(meta) {
 
 const serverUrl = () => config.server.replace(/\/$/, "");
 
+async function fetchManifest() {
+  const response = await fetch(`${serverUrl()}/manifest.json`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/** What the dashboard keeps about a picture, from its entry in the Mac's manifest. */
+const metaOf = (entry) => ({
+  id: entry.id,
+  url: `${serverUrl()}/${entry.file}?v=${entry.id}`,
+  date: entry.date,
+  scene: entry.scene,
+  style: entry.style,
+  subjects: entry.subjects,
+});
+
+// The Cache API only exists on secure origins; without it, pictures are shown uncached
+// and nothing is remembered.
+const canCache = "caches" in window;
+
+/** Shows a picture, downloading it into the cache first if it is not there. */
+async function show(meta) {
+  if (!canCache) {
+    display(meta.url, meta);
+    return;
+  }
+  const cache = await caches.open(CACHE_NAME);
+  if (!(await cache.match(meta.url))) {
+    const response = await fetch(meta.url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    await cache.put(meta.url, response);
+  }
+  await showCached(meta);
+}
+
+/** Remembers the newest picture and the one chosen (if any); drops the rest from the cache. */
+async function remember(newest, chosen) {
+  if (!canCache) return;
+  if (newest) localStorage.setItem(META_KEY, JSON.stringify(newest));
+  if (chosen) localStorage.setItem(SHOWN_KEY, JSON.stringify(chosen));
+  else localStorage.removeItem(SHOWN_KEY);
+  const keep = [readMeta()?.url, chosen?.url];
+  const cache = await caches.open(CACHE_NAME);
+  for (const key of await cache.keys()) {
+    if (!keep.includes(key.url)) await cache.delete(key);
+  }
+}
+
 async function poll() {
   try {
-    const base = serverUrl();
-    const manifestResponse = await fetch(`${base}/manifest.json`, { cache: "no-store" });
-    if (!manifestResponse.ok) throw new Error(`HTTP ${manifestResponse.status}`);
-    const { current } = await manifestResponse.json();
+    const { current } = await fetchManifest();
     if (!current || current.id === readMeta()?.id) return;
-
-    const url = `${base}/${current.file}?v=${current.id}`;
-    const meta = {
-      id: current.id,
-      url,
-      scene: current.scene,
-      style: current.style,
-      subjects: current.subjects,
-    };
-
-    // The Cache API only exists on secure origins; without it, show the picture uncached.
-    if (!("caches" in window)) {
-      display(url, meta);
-      return;
-    }
-
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const cache = await caches.open(CACHE_NAME);
-    await cache.put(url, response);
-    for (const key of await cache.keys()) {
-      if (key.url !== url) await cache.delete(key);
-    }
-    localStorage.setItem(META_KEY, JSON.stringify(meta));
-    await showCached(meta);
+    // A new picture takes over from whichever earlier one was being looked at.
+    const meta = metaOf(current);
+    await show(meta);
+    await remember(meta, null);
   } catch (error) {
     console.warn("Photo refresh failed:", error);
   }
@@ -226,6 +260,78 @@ document.getElementById("generate-button").addEventListener("click", (event) => 
   requestPicture();
 });
 
+// ---------- Earlier pictures ----------
+
+const BROWSE_NOTE_MS = 4_000;
+const HOLD_BUTTONS_MS = 8_000;
+// A touch that travels this far sideways, and mostly sideways, is a swipe.
+const SWIPE_PX = 120;
+let browsing = false;
+
+const dayOf = (date) =>
+  new Date(`${date}T12:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+/**
+ * Shows another of the pictures the Mac has kept: "previous" (the one made before the
+ * one on screen), "next" or "latest". Going past either end comes round to the other.
+ */
+export async function browsePictures(to) {
+  if (browsing || !config.server || !config.photos) return;
+  browsing = true;
+  try {
+    const { history = [] } = await fetchManifest(); // newest first
+    if (!history.length) return;
+    const onScreen = (readMeta(SHOWN_KEY) ?? readMeta())?.id;
+    const at = Math.max(0, history.findIndex((entry) => entry.id === onScreen));
+    const step = to === "next" ? -1 : 1;
+    const index = to === "latest" ? 0 : (at + step + history.length) % history.length;
+    const meta = metaOf(history[index]);
+    holdButtonsUntil = Date.now() + HOLD_BUTTONS_MS;
+    setTimeout(layout, HOLD_BUTTONS_MS + 100);
+    await show(meta);
+    await remember(index ? null : meta, index ? meta : null);
+    const which = index ? dayOf(meta.date) : "newest";
+    note(`Picture ${history.length - index} of ${history.length} · ${which}`, BROWSE_NOTE_MS);
+  } catch (error) {
+    console.warn("Could not show another picture:", error);
+    note("Can't reach the Mac", NOTE_MS);
+  } finally {
+    browsing = false;
+  }
+}
+
+for (const [id, to] of [["previous-button", "previous"], ["next-button", "next"]]) {
+  document.getElementById(id).addEventListener("click", (event) => {
+    event.stopPropagation();
+    browsePictures(to);
+  });
+}
+
+// Swipe right for the picture before, left for the one after, as in a photo album.
+// Not from the calendar (it scrolls) or a video call's picture.
+let swipeFrom = null;
+document.addEventListener(
+  "touchstart",
+  ({ target, touches }) => {
+    const free = touches.length === 1 && !target.closest("#agenda, #call-video, #timer");
+    swipeFrom = free ? { x: touches[0].clientX, y: touches[0].clientY } : null;
+  },
+  { passive: true },
+);
+document.addEventListener(
+  "touchend",
+  ({ changedTouches }) => {
+    const from = swipeFrom;
+    swipeFrom = null;
+    if (!from || !document.body.classList.contains("has-photo")) return;
+    const across = changedTouches[0].clientX - from.x;
+    const down = changedTouches[0].clientY - from.y;
+    if (Math.abs(across) < SWIPE_PX || Math.abs(across) < 2 * Math.abs(down)) return;
+    browsePictures(across > 0 ? "previous" : "next");
+  },
+  { passive: true },
+);
+
 // Tap to see the picture on its own; the clock and weather return by themselves.
 let peekTimer = null;
 document.addEventListener("click", () => {
@@ -239,8 +345,9 @@ export function startPhotos() {
   if (!config.server || !config.photos) return;
   generate.hidden = false;
   document.getElementById("generate-button").hidden = false;
-  const meta = readMeta();
-  if (meta && "caches" in window) showCached(meta).catch(() => {});
+  document.getElementById("pager").hidden = false;
+  const meta = readMeta(SHOWN_KEY) ?? readMeta();
+  if (meta && canCache) showCached(meta).catch(() => {});
   poll();
   setInterval(poll, config.photos.pollMinutes * 60_000);
 }

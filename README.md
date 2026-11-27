@@ -57,6 +57,9 @@ a compact weather card on top. The flow records where the faces and animals are,
 dashboard puts the clock and card in the corners that avoid them, drawing the clock as an
 outline if it cannot. Tap the screen to see the picture on its own for a minute.
 
+The two arrow buttons, or a swipe across the screen, go back and forth through the
+pictures made earlier; the one you stop on stays until a new picture is made.
+
 The round arrow button on the dashboard asks the Mac for another picture straight away
 (about 30 seconds). It only works while `flow.py serve` is running, and is capped by
 `button_daily_limit` in `profile.toml`.
@@ -162,7 +165,8 @@ Muse and the screen:
 - Muse is given these commands and no others: `dashboard.show` (enlarge the calendar or
   the weather, show the picture alone, or go back), `dashboard.timer.start` and
   `dashboard.timer.cancel` (a countdown on screen that chimes), and
-  `dashboard.picture.new`. The Mac checks every parameter, and the dashboard checks again.
+  `dashboard.picture.new` and `dashboard.picture.browse` (earlier pictures). The Mac
+  checks every parameter, and the dashboard checks again.
   Enlarged views go back by themselves after three minutes, or on a tap outside them.
 - Asked in text (the Muse app), Muse runs them within seconds. In a call it currently
   says it will and never does, so `muse.py` also picks the plainest requests out of what
