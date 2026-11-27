@@ -282,6 +282,9 @@ What to know:
 
   If the URL is unreachable it retries every 15 seconds.
 - **Getting out:** tap the top-left corner five times quickly to open the Portal's Settings.
+- **USB debugging** is turned off by the Portal whenever it restarts. The dashboard's
+  Settings panel has a switch for it (or, on an app installed before that existed, a
+  button that opens the Portal's Settings, where it is under Debug > ADB Enabled).
 - **Page API:** pages get `window.PortalShell` with `setBrightness(0..1)`,
   `resetBrightness()`, `openSettings()` and `reload()`.
 - **Debugging:** with the Portal plugged in, open `chrome://inspect` in Chrome on the Mac.

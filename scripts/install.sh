@@ -10,5 +10,7 @@ cd "$(dirname "$0")/.."
 # For voice calls to Muse; the Portal has no dialog of its own to ask with.
 "$ADB" shell pm grant com.portaldash.shell android.permission.RECORD_AUDIO
 "$ADB" shell pm grant com.portaldash.shell android.permission.CAMERA
+# Lets the dashboard's Settings turn USB debugging back on after the Portal restarts.
+"$ADB" shell pm grant com.portaldash.shell android.permission.WRITE_SECURE_SETTINGS
 # Show the bundled dashboard, dropping any dev-server URL left over from scripts/dev.sh.
 "$ADB" shell am start -n com.portaldash.shell/.MainActivity --es url default

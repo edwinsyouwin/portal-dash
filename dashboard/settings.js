@@ -111,6 +111,37 @@ async function renderMac() {
   if (!macScan.disabled) macStatus.textContent = up ? `Connected at ${host}` : `No answer from ${host}`;
 }
 
+// ---------- USB debugging ----------
+
+const debugSetting = document.getElementById("debug-setting");
+const debugStatus = document.getElementById("debug-status");
+const debugButton = document.getElementById("debug-button");
+
+/**
+ * Only the shell app can do this. If it has been given the right (scripts/install.sh
+ * does that) it turns debugging on itself; otherwise the button opens the Portal's own
+ * Settings, where it is under Debug > ADB Enabled.
+ */
+function renderDebug() {
+  const shell = window.PortalShell;
+  if (!shell?.openSettings) return;
+  debugSetting.hidden = false;
+  const direct = Boolean(shell.canSetDebugging?.());
+  const on = Boolean(shell.debuggingOn?.());
+  if (direct) {
+    debugStatus.textContent = on ? "On" : "Off";
+    debugButton.textContent = on ? "Turn off" : "Turn on";
+    debugButton.onclick = () => {
+      shell.setDebugging(!on);
+      setTimeout(renderDebug, 500);
+    };
+  } else {
+    debugStatus.textContent = "In the Portal\u2019s Settings: Debug, then ADB Enabled";
+    debugButton.textContent = "Open Settings";
+    debugButton.onclick = () => shell.openSettings();
+  }
+}
+
 // ---------- The panel ----------
 
 function open(show) {
@@ -119,6 +150,7 @@ function open(show) {
   if (!show) return;
   renderCycle();
   renderMac();
+  renderDebug();
 }
 
 export function startSettings() {

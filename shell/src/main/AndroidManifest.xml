@@ -4,6 +4,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- The dashboard's voice calls to Muse use the microphone (voice.js). -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- For the dashboard's "USB debugging" setting. Android only gives this to apps it is
+         granted to over adb (scripts/install.sh); without it the setting opens Settings. -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
     <!-- The dashboard's snapshot button (snapshot.js). -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />

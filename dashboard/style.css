@@ -532,7 +532,8 @@ body:not(.has-photo) .day .event:nth-of-type(n + 3) { display: none; }
 .settings h2 { margin: 0 0 1.2rem; font-size: 1.7rem; font-weight: 500; }
 .settings .setting-name { margin: 0 0 0.7rem; font-size: 1.3rem; }
 .settings .setting-note { margin: 0; font-size: 1.05rem; color: var(--muted); }
-.settings .setting-note + .setting-name { margin-top: 1.6rem; }
+.settings .setting-note + .setting-name,
+.settings .setting-note + div { margin-top: 1.6rem; }
 .settings .setting-row {
   display: flex;
   align-items: center;

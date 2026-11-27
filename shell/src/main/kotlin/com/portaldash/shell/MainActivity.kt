@@ -342,6 +342,25 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun reload() = runOnUiThread { webView.loadUrl(startUrl()) }
 
+        /** Whether this app may switch USB debugging itself (granted by scripts/install.sh). */
+        @JavascriptInterface
+        fun canSetDebugging(): Boolean = allowed(Manifest.permission.WRITE_SECURE_SETTINGS)
+
+        @JavascriptInterface
+        fun debuggingOn(): Boolean =
+            Settings.Global.getInt(contentResolver, Settings.Global.ADB_ENABLED, 0) == 1
+
+        /** Turns USB debugging on or off, which the Portal forgets at every restart. */
+        @JavascriptInterface
+        fun setDebugging(on: Boolean) {
+            if (!canSetDebugging()) return
+            try {
+                Settings.Global.putInt(contentResolver, Settings.Global.ADB_ENABLED, if (on) 1 else 0)
+            } catch (e: SecurityException) {
+                // The grant was taken back; the page falls back to opening Settings.
+            }
+        }
+
         /** Whether the page may open the camera (snapshot.js shows its button if so). */
         @JavascriptInterface
         fun hasCamera(): Boolean = allowed(Manifest.permission.CAMERA)
