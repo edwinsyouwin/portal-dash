@@ -31,6 +31,12 @@ service: `launchctl kickstart -k gui/$(id -u)/com.portaldash.muse.serve` (or
 So an edit to `dashboard/` shows on the Portal after a reload if live delivery is on,
 and is only permanent after `install.sh`.
 
+The page reloads by itself when the last commit touching `dashboard/` changes
+(`reload.js` asks `/dashboard/version` every minute), so committing is publishing:
+`scripts/push.sh` checks the scripts and makes it immediate. Uncommitted edits never
+reach the Portal this way. `reload.js` is loaded apart from the rest so that a broken
+page can still be replaced; keep it, `server.js` and `config.js` free of other imports.
+
 ## How a call works
 
 - `voice.js` opens a WebSocket to `muse.py serve`, presents the key from `config.js` and

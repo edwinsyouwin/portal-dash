@@ -37,6 +37,8 @@ not committed; each has an `.example` to copy.
 ```sh
 scripts/install.sh   # build the app with the current dashboard and install it
 scripts/dev.sh       # live-edit: serve dashboard/ from the Mac, Enter reloads the Portal
+scripts/live.sh      # once, over USB: let the Portal take dashboard updates over Wi-Fi
+scripts/push.sh      # after that: send committed dashboard changes, no cable needed
 ```
 
 `dev.sh` works over the USB cable (`adb reverse`), so the Portal and Mac do not need to

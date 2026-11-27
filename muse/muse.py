@@ -13,6 +13,7 @@
   muse.py status   show whether this Mac is paired, and with which Muse
   muse.py serve    carry voice calls between the dashboard and Muse
   muse.py key      print the key the dashboard needs (muse.key in dashboard/config.js)
+  muse.py reload   have the dashboards connected to `serve` load their files afresh
 
 The SDK is written for Linux, where it advertises over the machine's own Bluetooth. Here
 the Portal's radio does that instead (BleRelay in the shell app) and this Mac runs the
@@ -1269,6 +1270,13 @@ class Dashboard:
         if not hmac.compare_digest(presented.encode(), self._key.encode()):
             await websocket.close(4401, "wrong key")
             return
+        if "reload" in hello:
+            # Not a dashboard: `muse.py reload` on this Mac, asking the dashboards to load
+            # their files afresh. It answers with how many heard.
+            for dashboard in Dashboard.connected:
+                dashboard.tell(type="command", name="reload", notice=str(hello["reload"])[:300])
+            await websocket.send(json.dumps({"reloaded": len(Dashboard.connected)}))
+            return
         if hello.get("wake"):
             self._arm()
 
@@ -1459,6 +1467,26 @@ class Dashboard:
         self._switch_call(self._detector.heard == video_phrase())
 
 
+def reload(args):
+    """Tell the running `serve` to have its dashboards load their files afresh."""
+    configure()
+    import websockets
+
+    async def ask():
+        async with websockets.connect(f"ws://127.0.0.1:{args.port}") as server:
+            await server.send(json.dumps({"key": portal_key(), "reload": args.notice}))
+            return json.loads(await asyncio.wait_for(server.recv(), 5))["reloaded"]
+
+    try:
+        count = asyncio.run(ask())
+    except (OSError, asyncio.TimeoutError, websockets.exceptions.WebSocketException):
+        sys.exit("`muse.py serve` is not answering on this Mac.")
+    if not count:
+        sys.exit("No dashboard is connected just now; it will load the new files within a minute "
+                 "of the next commit by itself (dashboard/reload.js).")
+    print(f"Reloading {count} dashboard{'s' if count != 1 else ''}.")
+
+
 def serve(args):
     configure()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s: %(message)s")
@@ -1497,6 +1525,10 @@ def main():
     serve_parser.add_argument("--port", type=int, default=VOICE_PORT)
     serve_parser.set_defaults(run=serve)
     commands.add_parser("key", help="print the dashboard's key").set_defaults(run=lambda args: print(portal_key()))
+    reload_parser = commands.add_parser("reload", help="have the connected dashboards load their files afresh")
+    reload_parser.add_argument("notice", nargs="?", default="", help="a line to show on the dashboard afterwards")
+    reload_parser.add_argument("--port", type=int, default=VOICE_PORT)
+    reload_parser.set_defaults(run=reload)
     args = parser.parse_args()
     args.run(args)
 

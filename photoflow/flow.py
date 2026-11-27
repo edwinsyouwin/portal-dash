@@ -1027,6 +1027,17 @@ def youtube_search(query):
     ]
 
 
+def dashboard_version():
+    """What a dashboard compares to know its files are out of date: the last commit that
+    touched dashboard/. Work in progress is not a version until it is committed, so a
+    half-made change never reaches the Portal by itself. "" outside a git checkout.
+    """
+    found = subprocess.run(
+        ["git", "log", "-1", "--format=%H", "--", "dashboard"], cwd=ROOT.parent, capture_output=True, text=True
+    )
+    return found.stdout.strip() if found.returncode == 0 else ""
+
+
 def deploy_key():
     """The key that signs dashboard files for the Portal, made on first use."""
     if not DEPLOY_KEY.exists():
@@ -1089,6 +1100,8 @@ class Handler(SimpleHTTPRequestHandler):
 
             # Read on every request, so calendars added to .env show up without a restart.
             self.send_json(200, gcal.upcoming(gcal.feeds_from(read_env())))
+        elif path == "/dashboard/version":
+            self.send_json(200, {"version": dashboard_version()})
         elif path.startswith("/dashboard/"):
             self.send_dashboard_file(path.removeprefix("/dashboard/"))
         else:
