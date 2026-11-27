@@ -67,6 +67,16 @@ PORTRAIT_MAX_PX = 1024
 SUNGLASSES, EYES_CLOSED = 2, 1  # how Photos records them (glasses type, eye state)
 # Close-ups of each subject sent with every picture, unless profile.toml says otherwise.
 REFERENCE_PORTRAITS = 2
+# Memories: a picture is set in one of the household's own outings, shown to the model
+# through this many of its photos. An outing needs a few photos to count, and is not
+# used again until this many pictures later.
+MEMORY_PHOTOS = 2
+MEMORY_MIN_PHOTOS = 5
+MEMORY_REST = 30
+MEMORY_APART_S = 120
+# What Photos sees in pictures that are records, not memories.
+MEMORY_NOT_SCENES = {"document", "printed page", "receipt", "handwriting", "screenshot", "carton", "qr code"}
+MEMORY_SKIP = ("Home",)  # Photos' name for the everyday ones; profile.toml can add more
 PORT = 8766
 
 # Live dashboard updates: the shell app asks for /dashboard/<file> and only uses an answer
@@ -238,6 +248,62 @@ def prepare_reference(source, dest):
     return dest
 
 
+# ---------- Memories ----------
+
+
+def pick_memory(db, subjects, profile, history, rng):
+    """One of the household's own outings to set the picture in, or None.
+
+    Photos groups a library into "moments", each named after where it was. One is picked
+    at random, places weighted equally however often they were visited, and its
+    best-rated photos go to the model as the setting. Photos showing anyone but the
+    subjects are never sent, nor are selfies and screenshots.
+    Returns {"title", "when", "photos": [(path, caption)]}.
+    """
+    keys = {s.get("photos_person_id") or s["photos_name"] for s in subjects}
+    skip = set(MEMORY_SKIP) | set(profile.get("memory_skip", []))
+    own_album = profile.get("photos_album")
+    recent = {entry.get("memory") for entry in history[:MEMORY_REST]}
+
+    moments = {}  # moment id -> (title, [photos])
+    for photo in db.photos(movies=False):
+        moment = photo.moment_info
+        if not moment or not moment.title or moment.title in skip or moment.title in recent:
+            continue
+        if photo.screenshot or photo.hidden or photo.selfie or own_album in photo.albums:
+            continue
+        if MEMORY_NOT_SCENES & {label.lower() for label in photo.labels}:
+            continue
+        if {i.uuid if i.name.startswith("_") else i.name for i in photo.person_info} - keys:
+            continue
+        if local_file(photo):
+            moments.setdefault(moment.pk, (moment.title, []))[1].append(photo)
+
+    by_place = {}
+    for title, photos in moments.values():
+        if len(photos) >= MEMORY_MIN_PHOTOS:
+            by_place.setdefault(title, []).append(photos)
+    if not by_place:
+        return None
+    best = []
+    for title in rng.sample(sorted(by_place), len(by_place)):
+        photos = rng.choice(by_place[title])
+        for photo in sorted(photos, key=lambda p: p.score.overall, reverse=True):
+            # Bursts of the same shot say nothing more: take photos minutes apart.
+            apart = all(abs((photo.date - other.date).total_seconds()) >= MEMORY_APART_S for other in best)
+            if apart and long_edge(local_file(photo)) >= REFERENCE_MIN_PX:
+                best.append(photo)
+            if len(best) == MEMORY_PHOTOS:
+                break
+        if best:  # else only thumbnails of that outing are on this Mac: try another
+            break
+    if not best:
+        return None
+    when = best[0].date.strftime("%B %Y")
+    caption = f"is one of their own photos from {title}, {when}"
+    return {"title": title, "when": when, "photos": [(Path(local_file(p)), caption) for p in best]}
+
+
 # ---------- Prompt ----------
 
 
@@ -247,15 +313,25 @@ def choose(options, recent, rng):
     return rng.choice(fresh)
 
 
-def build_prompt(subjects, refs, scene, style):
+def build_prompt(subjects, refs, scene, style, memory=None, interests=()):
     names = [s["name"] for s in subjects]
     everyone = ", ".join(names[:-1]) + f" and {names[-1]}"
     lines = [
         f"Create one image in this style: {style}.",
         f"It shows {everyone}: {scene}.",
-        "",
-        "The attached reference photos show who they are:",
     ]
+    if memory:
+        lines += [
+            "",
+            f"This is a new memory for them, one that never happened but could have. They "
+            f"were at {memory['title']} in {memory['when']}, and the photos from there show "
+            "the place, the season, the light and the kind of thing they did. Set the "
+            "picture there and invent a fresh moment in the same spirit: a different "
+            "view, a different activity, all of them together. Do not copy a photo.",
+        ]
+        if interests:
+            lines.append(f"Things they love, to draw on where they fit the place: {', '.join(interests)}.")
+    lines += ["", "The attached photos:"]
     lines += [f"- Photo {i}: {caption}." for i, (_, caption) in enumerate(refs, start=1)]
     lines += [f"- {s['name']} is {s['description']}." for s in subjects if s.get("description")]
     lines += [
@@ -265,7 +341,7 @@ def build_prompt(subjects, refs, scene, style):
         "Where several photos show the same one, go by what the photos agree on: face "
         "shape, eyes, nose, smile and hairline, rather than any one photo's expression, "
         "hat or glasses. "
-        "Use the references only for likeness, not for the setting or clothing. "
+        "Use the photos of them only for likeness, not for the setting or clothing. "
         "Landscape 3:2 composition. No text, captions or watermarks in the image.",
     ]
     return "\n".join(lines)
@@ -545,7 +621,15 @@ def run(args):
         refs = pick_from_folder(subjects, rng, portraits) or pick_from_library(
             subjects, rng, open_library(profile), profile.get("photos_album")
         )
-    prompt = build_prompt(subjects, refs, scene, style)
+    memory = None
+    if profile.get("memories", True) and not args.source:
+        library = Path(profile.get("library", DEFAULT_LIBRARY)).expanduser()
+        memory = library.exists() and pick_memory(open_library(profile), subjects, profile, history, rng)
+    if memory:
+        # Shown under the clock on the dashboard, and how the prompt introduces the picture.
+        scene = f"a new memory from {memory['title']}"
+        refs = refs + memory["photos"]
+    prompt = build_prompt(subjects, refs, scene, style, memory, profile.get("interests", ()))
     print(f"Date:   {day}\nScene:  {scene}\nStyle:  {style}")
     for path, caption in refs:
         print(f"Photo:  {path} ({caption})")
@@ -571,6 +655,7 @@ def run(args):
         "file": f"{picture_id}.jpg",
         "scene": scene,
         "style": style,
+        "memory": memory["title"] if memory else None,
         "provider": provider,
         "usage": usage,
     }

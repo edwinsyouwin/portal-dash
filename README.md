@@ -60,6 +60,14 @@ outline if it cannot. Tap the screen to see the picture on its own for a minute.
 The two arrow buttons, or a swipe across the screen, go back and forth through the
 pictures made earlier; the one you stop on stays until a new picture is made.
 
+**Memories.** With `memories = true` in `profile.toml` (the default), each picture is set
+in one of your own outings: a place and time picked at random from the Photos library,
+shown to the model through two of its photos, with your `interests` to draw on. The model
+invents a new moment there; it is told not to copy a photo. The reference photos in
+`refs/` are still what the faces come from. Photos showing anyone but the subjects are
+never sent, nor selfies, screenshots or documents; `memory_skip` lists places to leave
+out. With memories off, the `scenes` list is used.
+
 The sliders button opens Settings, where the picture can be set to change by itself
 every 2, 5, 15 or 60 minutes, going round the pictures already made (`cycleMinutes` under
 `photos` in `config.js` sets the starting choice).

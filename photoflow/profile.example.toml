@@ -17,7 +17,23 @@ reference_portraits = 2
 # The Photos library that reference photos are picked from.
 library = "~/Pictures/Photos Library.photoslibrary"
 
-# What the three of you are doing. One is used per day; none repeats until all have
+# Memories: each picture is set in one of your own outings, picked at random from the
+# Photos library and shown to the model through two of its photos, which then invents a
+# new moment there. Photos with anyone but the subjects in them are never sent. Set to
+# false to use only the scenes below.
+memories = true
+
+# Places (as Photos names them) never to use as a memory. "Home" is always skipped.
+memory_skip = []
+
+# What you love doing, for the model to draw on where it fits the place.
+interests = [
+  "long hikes with a view at the end",
+  "trying the local food",
+  "live music",
+]
+
+# Used when memories are off, or none can be found. What the three of you are doing. One is used per day; none repeats until all have
 # had a turn. Write each so it reads naturally after "It shows Alex, Sam and Biscuit: ".
 # Replace these with your own interests and memories.
 scenes = [
