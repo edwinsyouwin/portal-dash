@@ -4,6 +4,7 @@ import { startControl } from "./control.js";
 import { startPhotos } from "./photo.js";
 import { startSettings } from "./settings.js";
 import { startSnapshot } from "./snapshot.js";
+import { startTasks } from "./tasks.js";
 import { startVoice } from "./voice.js";
 import { startYouTube } from "./youtube.js";
 
@@ -239,6 +240,7 @@ setInterval(tick, 1000);
 refreshWeather();
 startPhotos();
 startAgenda();
+startTasks();
 startVoice();
 startControl();
 startSettings();

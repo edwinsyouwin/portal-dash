@@ -150,7 +150,7 @@ that calendar, and event titles are served unauthenticated on the home network.
 
 ## Tasks
 
-The calendar card has a Tasks tab: a shared to-do list. Tap the circle to finish a task,
+A Tasks card holds a shared to-do list, in a corner of its own. Tap the circle to finish a task,
 its words to change them, × to remove it, and type in the box to add one. The list lives
 on the Mac (`~/.config/portal-dash/tasks.json`), so it survives restarts and reinstalls
 and Muse can read and change it too ("add milk to the list", "what's left to do?"). The

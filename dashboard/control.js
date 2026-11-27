@@ -16,7 +16,7 @@ const CHIMES = 8;
 const TIMER_KEY = "timer";
 const NOTICE_KEY = "notice";
 const NOTICE_MS = 12_000;
-const FOCUSED = { calendar: "agenda", weather: "weather" };
+const FOCUSED = { calendar: "agenda", weather: "weather", tasks: "tasks" };
 
 const body = document.body;
 const timer = document.getElementById("timer");
@@ -65,10 +65,8 @@ function show(view, range) {
     body.classList.add("photo-mode");
     return;
   }
-  if (view === "tasks") body.dataset.focus = "calendar"; // the tasks are a tab of that card
-  else if (view in FOCUSED) body.dataset.focus = view;
+  if (view in FOCUSED) body.dataset.focus = view;
   else return;
-  if (view === "tasks") setAgendaView("tasks");
   if (view === "calendar" && range) setAgendaView(range);
   focusTimer = setTimeout(() => show("home"), FOCUS_MS);
 }

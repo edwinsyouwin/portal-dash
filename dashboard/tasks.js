@@ -1,6 +1,5 @@
-// Tasks: a short household to-do list, kept on the Mac (photoflow/flow.py) so that it
-// outlives restarts and Muse can change it too. Shown as a tab of the agenda card
-// (agenda.js), which calls in here for the list's HTML and hands over its taps.
+// Tasks: a short household to-do list in a card of its own, kept on the Mac
+// (photoflow/flow.py) so that it outlives restarts and Muse can change it too.
 import config from "./config.js";
 import { serverUrl } from "./server.js";
 
@@ -13,7 +12,8 @@ let tasks = [];
 let editing = null; // id of the task whose words are being changed
 let error = "";
 let errorTimer = null;
-let redraw = () => {};
+
+const card = document.getElementById("tasks");
 
 // The card moves clear of the on-screen keyboard while a box in it has the cursor
 // (style.css), so the tap that starts or ends typing can land on whatever is behind the
@@ -46,6 +46,7 @@ function keep(list) {
 
 /** The latest list from the Mac; on failure, what was last seen stays up. */
 export async function refreshTasks() {
+  if (!tasksOn()) return;
   try {
     const response = await fetch(`${serverUrl()}/tasks.json`, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -76,8 +77,8 @@ async function change(request) {
   redraw(true);
 }
 
-/** The tab's contents: tasks still to do, then finished ones, then a box to add one. */
-export function tasksHtml() {
+/** The card's contents: tasks still to do, then finished ones, then a box to add one. */
+function tasksHtml() {
   const rows = [...tasks.filter((task) => !task.done), ...tasks.filter((task) => task.done)]
     .map((task) => {
       const words =
@@ -94,7 +95,7 @@ export function tasksHtml() {
   const finished = tasks.some((task) => task.done)
     ? `<button type="button" class="clear" data-task="clear">Clear finished</button>`
     : "";
-  return `<div class="days tasks">${rows || `<div class="event none">Nothing to do</div>`}</div>
+  return `<h2>Tasks</h2><div class="days tasks">${rows || `<div class="event none">Nothing to do</div>`}</div>
     <form class="task-add" data-task="add">
       <input maxlength="${MAX_CHARS}" placeholder="Add a task" enterkeyhint="done">
       <button type="submit">Add</button>
@@ -102,15 +103,30 @@ export function tasksHtml() {
     <div class="more${error ? " stale" : ""}">${escapeHtml(error)}${error ? "" : finished}</div>`;
 }
 
-/** A tap inside the tab. Returns true when it was for a task. */
-export function taskClicked(event) {
+/**
+ * Draws the card. Routine redraws wait while someone is typing in it, so the words do
+ * not vanish under their fingers; ones that follow a tap (`force`) do not.
+ */
+function redraw(force = false) {
+  if (!force && card.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;
+  // The list scrolls when it is longer than the card; keep its place across redraws.
+  const scrolled = card.querySelector(".days")?.scrollTop ?? 0;
+  card.innerHTML = tasksHtml();
+  card.querySelector(".days").scrollTop = scrolled;
+  card.hidden = false;
+}
+
+/** A tap inside the card. */
+function taskClicked(event) {
+  // Taps on the card should not also toggle the picture-only view.
+  event.stopPropagation();
   const target = event.target.closest("[data-task]");
-  if (!target || target.tagName === "FORM") return Boolean(target);
+  if (!target || target.tagName === "FORM") return;
   const id = Number(target.closest("[data-id]")?.dataset.id);
   const task = tasks.find((candidate) => candidate.id === id);
   const action = target.dataset.task;
   if (action === "clear") change({ action: "clear_done" });
-  else if (!task || action === "words") return true;
+  else if (!task || action === "words") return;
   else if (action === "toggle") change({ action: "update", id, done: !task.done });
   else if (action === "delete") change({ action: "delete", id });
   else if (action === "edit") {
@@ -120,7 +136,6 @@ export function taskClicked(event) {
     box?.focus();
     box?.setSelectionRange(box.value.length, box.value.length);
   }
-  return true;
 }
 
 /** Finishes changing a task's words: saved if they changed, dropped if emptied. */
@@ -134,13 +149,14 @@ function finishEdit(box) {
   else redraw(true);
 }
 
-export function startTasks(card, render) {
-  redraw = render;
+export function startTasks() {
+  if (!tasksOn()) return;
   try {
     tasks = JSON.parse(localStorage.getItem(CACHE_KEY)) ?? [];
   } catch {
     tasks = [];
   }
+  card.addEventListener("click", taskClicked);
   card.addEventListener("submit", (event) => {
     event.preventDefault();
     const box = event.target.querySelector("input");
@@ -156,6 +172,7 @@ export function startTasks(card, render) {
   card.addEventListener("focusout", (event) => {
     if (event.target.matches(".task-words")) finishEdit(event.target);
   });
+  redraw();
   refreshTasks();
   setInterval(refreshTasks, POLL_MS);
 }

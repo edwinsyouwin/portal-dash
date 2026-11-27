@@ -15,7 +15,7 @@ export default {
 
   // Daily AI picture. Set to null to show only the dashboard.
   photos: { pollMinutes: 10 },
-  // A shared to-do list, as a tab of the calendar card; kept on the Mac.
+  // A shared to-do list in a card of its own; kept on the Mac.
   tasks: true,
   // A camera button: take a photo and have it redrawn in one of the picture styles. The
   // photo is sent to the image provider. Needs `photos` above.

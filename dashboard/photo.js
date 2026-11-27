@@ -16,6 +16,7 @@ const caption = document.getElementById("caption");
 const clock = document.getElementById("clock");
 const weather = document.getElementById("weather");
 const agenda = document.getElementById("agenda");
+const tasksCard = document.getElementById("tasks");
 const generate = document.getElementById("generate");
 const generateNote = document.getElementById("generate-note");
 
@@ -120,6 +121,8 @@ function layout() {
   const time = place(clock, ["tl", "bl", "br"], rects, [buttons, cards.rect]);
   const share = time.covered / (time.rect.w * time.rect.h || 1);
   clock.classList.toggle("outline", share > OUTLINE_OVERLAP);
+  // The task list takes whichever corner is left.
+  if (!tasksCard.hidden) place(tasksCard, ["bl", "br", "tl"], rects, [buttons, cards.rect, time.rect]);
 }
 
 // The cards grow when their data arrives and the clock changes width with the time.
@@ -127,6 +130,7 @@ const resizes = new ResizeObserver(layout);
 resizes.observe(clock);
 resizes.observe(weather);
 resizes.observe(agenda);
+resizes.observe(tasksCard);
 img.addEventListener("load", layout);
 addEventListener("resize", layout);
 

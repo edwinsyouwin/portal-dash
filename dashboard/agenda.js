@@ -1,8 +1,6 @@
-// Agenda: upcoming Google Calendar events, fetched from the Mac's server (photoflow/gcal.py),
-// with the household's task list (tasks.js) as a further tab of the same card.
+// Agenda: upcoming Google Calendar events, fetched from the Mac's server (photoflow/gcal.py).
 import config from "./config.js";
 import { serverUrl } from "./server.js";
-import { startTasks, taskClicked, tasksHtml, tasksOn } from "./tasks.js";
 
 const CACHE_KEY = "agenda";
 const VIEW_KEY = "agenda-view";
@@ -13,9 +11,7 @@ const VIEWS = {
   today: { label: "Today", days: (config.calendar?.daysAhead ?? 1) + 1 },
   week: { label: "Week", weeks: 1 },
   month: { label: "Month", weeks: 5 },
-  tasks: { label: "Tasks" },
 };
-const CALENDAR_VIEWS = ["today", "week", "month"];
 // Events repeating this often are routine and do not make a day stand out.
 const ROUTINE = ["DAILY", "WEEKLY"];
 // Neither do one-off events sharing a title this many times in the weeks fetched, which
@@ -90,9 +86,8 @@ function dayLabel(offset, now) {
   return (offset < 7 ? dayFormat : dateFormat).format(day);
 }
 
-function tabs(calendar) {
+function tabs() {
   const buttons = Object.entries(VIEWS)
-    .filter(([key]) => (key === "tasks" ? tasksOn() : calendar))
     .map(
       ([key, { label }]) =>
         `<button type="button" data-view="${key}"${key === view ? ' class="on"' : ""}>${label}</button>`,
@@ -170,25 +165,18 @@ function grid(now) {
   return `<div class="grid">${heads}${cells}</div><div class="detail">${detail}</div>`;
 }
 
-/** Draws the card. Routine redraws wait while someone is typing in it; `now` ones do not. */
-function render(force = false) {
-  const calendar = Boolean(data?.configured);
-  if (!calendar && !tasksOn()) {
+function render() {
+  if (!data?.configured) {
     element.hidden = true;
     return;
   }
-  if (!force && element.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;
-  // Whichever of the calendar and the tasks is missing, show the other.
-  if (!calendar) view = "tasks";
-  else if (view === "tasks" && !tasksOn()) view = "today";
   const now = new Date();
-  const failed = calendar && data.failed.length
+  const failed = data.failed.length
     ? `<div class="more stale">Can't read: ${escapeHtml(data.failed.join(", "))}</div>`
     : "";
   // The list scrolls when it is longer than the card; keep its place across re-renders.
   const scrolled = element.querySelector(".days")?.scrollTop ?? 0;
-  const body = view === "tasks" ? tasksHtml() : (view === "today" ? list(now) : grid(now)) + failed;
-  element.innerHTML = tabs(calendar) + body;
+  element.innerHTML = tabs() + (view === "today" ? list(now) : grid(now)) + failed;
   const days = element.querySelector(".days");
   if (days) days.scrollTop = scrolled;
   element.hidden = false;
@@ -198,7 +186,6 @@ function render(force = false) {
 element.addEventListener("click", (event) => {
   // Taps on the card should not also toggle the picture-only view.
   event.stopPropagation();
-  if (taskClicked(event)) return;
   const day = event.target.closest("[data-day]");
   if (day) {
     picked = Number(day.dataset.day);
@@ -214,7 +201,7 @@ element.addEventListener("click", (event) => {
   } catch {
     // Storage unavailable; the choice just lasts until the next restart.
   }
-  render(true);
+  render();
 });
 
 async function refresh() {
@@ -234,28 +221,26 @@ async function refresh() {
   render();
 }
 
-/** Switches between the today, week, month and tasks views, as the card's own buttons do. */
+/** Switches between the today, week and month views, as the card's own buttons do. */
 export function setAgendaView(name) {
   if (!(name in VIEWS) || name === view) return;
   view = name;
   picked = null;
-  render(true);
+  render();
 }
 
 export function startAgenda() {
-  if (!config.server) return;
+  if (!config.server || !config.calendar) return;
   try {
+    data = JSON.parse(localStorage.getItem(CACHE_KEY));
     const saved = localStorage.getItem(VIEW_KEY);
     if (saved in VIEWS) view = saved;
-    if (config.calendar) data = JSON.parse(localStorage.getItem(CACHE_KEY));
   } catch {
     data = null;
   }
-  if (tasksOn()) startTasks(element, render);
   render();
-  if (!config.calendar) return;
   refresh();
   setInterval(refresh, config.calendar.pollMinutes * 60_000);
   // Events drop off as they end, and "Now" appears as they start.
-  setInterval(() => CALENDAR_VIEWS.includes(view) && render(), 60_000);
+  setInterval(render, 60_000);
 }
