@@ -2,6 +2,7 @@ import config from "./config.js";
 import { startAgenda } from "./agenda.js";
 import { startControl } from "./control.js";
 import { startPhotos } from "./photo.js";
+import { startSettings } from "./settings.js";
 import { startVoice } from "./voice.js";
 
 const $ = (id) => document.getElementById(id);
@@ -238,3 +239,4 @@ startPhotos();
 startAgenda();
 startVoice();
 startControl();
+startSettings();

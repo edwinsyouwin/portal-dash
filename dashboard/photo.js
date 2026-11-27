@@ -271,9 +271,11 @@ const dayOf = (date) =>
  * Shows another of the pictures the Mac has kept: "previous" (the one made before the
  * one on screen), "next" or "latest". Going past either end comes round to the other.
  */
-export async function browsePictures(to) {
+export async function browsePictures(to, quiet = false) {
   if (browsing || !config.server || !config.photos) return;
   browsing = true;
+  // A picture chosen by hand gets its full time before the next automatic change.
+  if (!quiet) startCycle();
   try {
     const { history = [] } = await fetchManifest(); // newest first
     if (!history.length) return;
@@ -285,13 +287,47 @@ export async function browsePictures(to) {
     await show(meta);
     await remember(index ? null : meta, index ? meta : null);
     const which = index ? dayOf(meta.date) : "newest";
-    note(`Picture ${history.length - index} of ${history.length} · ${which}`, BROWSE_NOTE_MS);
+    if (!quiet) note(`Picture ${history.length - index} of ${history.length} · ${which}`, BROWSE_NOTE_MS);
   } catch (error) {
     console.warn("Could not show another picture:", error);
-    note("Can't reach the Mac", NOTE_MS);
+    if (!quiet) note("Can't reach the Mac", NOTE_MS);
   } finally {
     browsing = false;
   }
+}
+
+// ---------- Changing the picture by itself ----------
+
+const CYCLE_KEY = "photo-cycle";
+/** How often the picture can change by itself, in minutes; 0 is never. */
+export const CYCLE_CHOICES = [0, 2, 5, 15, 60];
+let cycleTimer = null;
+
+/** Minutes between automatic changes: what was chosen in Settings, else config.js, else 0. */
+export function pictureCycle() {
+  let chosen = null;
+  try {
+    chosen = localStorage.getItem(CYCLE_KEY);
+  } catch {
+    // Storage unavailable; fall back to config.js.
+  }
+  const minutes = Number(chosen ?? config.photos?.cycleMinutes ?? 0);
+  return minutes > 0 ? minutes : 0;
+}
+
+export function setPictureCycle(minutes) {
+  try {
+    localStorage.setItem(CYCLE_KEY, String(minutes));
+  } catch {
+    // The choice lasts until the dashboard restarts.
+  }
+  startCycle(minutes);
+}
+
+/** Goes back through the earlier pictures, round and round, without making new ones. */
+function startCycle(minutes = pictureCycle()) {
+  clearInterval(cycleTimer);
+  cycleTimer = minutes > 0 ? setInterval(() => browsePictures("previous", true), minutes * 60_000) : null;
 }
 
 for (const [id, to] of [["previous-button", "previous"], ["next-button", "next"]]) {
@@ -344,4 +380,5 @@ export function startPhotos() {
   if (meta && canCache) showCached(meta).catch(() => {});
   poll();
   setInterval(poll, config.photos.pollMinutes * 60_000);
+  startCycle();
 }

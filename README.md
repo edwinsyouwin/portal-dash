@@ -60,7 +60,11 @@ outline if it cannot. Tap the screen to see the picture on its own for a minute.
 The two arrow buttons, or a swipe across the screen, go back and forth through the
 pictures made earlier; the one you stop on stays until a new picture is made.
 
-The round arrow button on the dashboard asks the Mac for another picture straight away
+The sliders button opens Settings, where the picture can be set to change by itself
+every 2, 5, 15 or 60 minutes, going round the pictures already made (`cycleMinutes` under
+`photos` in `config.js` sets the starting choice).
+
+The sparkle button on the dashboard asks the Mac for another picture straight away
 (about 30 seconds). It only works while `flow.py serve` is running, and is capped by
 `button_daily_limit` in `profile.toml`.
 

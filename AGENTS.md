@@ -50,6 +50,9 @@ and is only permanent after `install.sh`.
   reports no text and Muse cannot end it, so `Farewell` in `muse.py` listens for the
   goodbye with a local speech model.
 
+Choices made on the Portal itself (the Settings panel, the picture being shown, a running
+timer) live in the WebView's `localStorage`, not in `config.js`.
+
 ## What Muse can do
 
 Muse is registered with the `dashboard.*` commands in `COMMANDS` (`muse.py`) and nothing
