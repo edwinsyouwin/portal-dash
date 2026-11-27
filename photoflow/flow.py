@@ -55,11 +55,13 @@ CANDIDATE_POOL = 20  # pick at random among this many best-scored library photos
 GATHER_PORTRAITS = 10
 GATHER_TOGETHER = 6
 GATHER_YEARS = 3
-GATHER_MIN_FACE = 0.1  # face width as a fraction of the photo's long edge
+# Face width as a fraction of the photo's long edge. Low enough to let in photos taken
+# by someone else, from further away than a selfie.
+GATHER_MIN_FACE = 0.06
 GATHER_MIN_FACE_TOGETHER = 0.05
 GATHER_MAX_TURN = 0.6  # radians the head may be turned away from the camera
 PORTRAIT_FACES_WIDE = 3  # a close-up is this many face-widths across: head and shoulders
-PORTRAIT_MIN_PX = 480  # close-ups cropped smaller than this are too blurry to help
+PORTRAIT_MIN_PX = 400  # close-ups cropped smaller than this are too blurry to help
 PORTRAIT_MAX_PX = 1024
 SUNGLASSES, EYES_CLOSED = 2, 1  # how Photos records them (glasses type, eye state)
 # Close-ups of each subject sent with every picture, unless profile.toml says otherwise.
@@ -658,8 +660,10 @@ def gather(args):
         if len(shown) == len(keys):
             groups.append((photo, list(shown.values())))
 
-    def newest_and_clearest(photo, quality):
-        return (photo.date.year >= recent, quality)
+    def presentable(photo):
+        """Photos someone took with care, not selfies: recent ones first, then by how
+        good Photos thinks the picture is, with a nudge for Portrait mode."""
+        return (photo.date.year >= recent, photo.score.overall + (0.2 if photo.portrait else 0))
 
     def folder_for(name):
         folder = REFS / name
@@ -679,8 +683,9 @@ def gather(args):
             (face, photo) for face, photo in faces[key]
             if face.size >= GATHER_MIN_FACE and abs(face.yaw or 0) <= GATHER_MAX_TURN
             and face.glasses_type != SUNGLASSES and face.eye_state != EYES_CLOSED
+            and not photo.selfie
         ]
-        usable.sort(key=lambda pair: newest_and_clearest(pair[1], pair[0].quality or 0), reverse=True)
+        usable.sort(key=lambda pair: presentable(pair[1]), reverse=True)
         days = set()
         for face, photo in usable:
             if len(days) == GATHER_PORTRAITS:
@@ -715,13 +720,13 @@ def gather(args):
     folder = folder_for("together")
     if folder is not None:
         usable = [
-            (photo, min(face.size for face in shown), min(face.quality or 0 for face in shown))
-            for photo, shown in groups
+            photo for photo, shown in groups
+            if not photo.selfie and min(face.size for face in shown) >= GATHER_MIN_FACE_TOGETHER
+            and not any(face.glasses_type == SUNGLASSES for face in shown)
         ]
-        usable = [entry for entry in usable if entry[1] >= GATHER_MIN_FACE_TOGETHER]
-        usable.sort(key=lambda entry: newest_and_clearest(entry[0], entry[1] * (1 + entry[2])), reverse=True)
+        usable.sort(key=presentable, reverse=True)
         days = set()
-        for photo, _, _ in usable:
+        for photo in usable:
             if len(days) == GATHER_TOGETHER:
                 break
             day = photo.date.date()
