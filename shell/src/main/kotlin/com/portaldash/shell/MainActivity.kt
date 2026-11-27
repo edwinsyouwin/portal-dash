@@ -61,6 +61,10 @@ class MainActivity : Activity() {
     @Volatile
     private var liveDownUntil = 0L
 
+    // The page on screen is the app's own copy, older than the Mac's (see Bridge.staleCopy).
+    @Volatile
+    private var pageFromBundle = false
+
     private var cornerTaps = 0
     private var firstCornerTapAt = 0L
 
@@ -261,7 +265,13 @@ class MainActivity : Activity() {
             val url = request.url
             if (url.host != ASSET_HOST) return null
             val path = url.path.orEmpty().trimStart('/').ifEmpty { "index.html" }
-            liveFile(path)?.let {
+            val live = liveFile(path)
+            // Remember when the page itself had to come from the app's own copy although
+            // live updates are on: the Mac was not answering yet, as just after a restart.
+            if (path == "index.html") {
+                pageFromBundle = live == null && prefs.getString(PREF_LIVE, null) != null
+            }
+            live?.let {
                 return WebResourceResponse(
                     mimeType(path), null, 200, "OK",
                     mapOf("Cache-Control" to "no-store"), ByteArrayInputStream(it),
@@ -341,6 +351,13 @@ class MainActivity : Activity() {
 
         @JavascriptInterface
         fun reload() = runOnUiThread { webView.loadUrl(startUrl()) }
+
+        /**
+         * True when live updates are on but this page was loaded from the app's own copy
+         * because the Mac did not answer. reload.js loads it afresh once the Mac does.
+         */
+        @JavascriptInterface
+        fun staleCopy(): Boolean = pageFromBundle
 
         /** Whether this app may switch USB debugging itself (granted by scripts/install.sh). */
         @JavascriptInterface
