@@ -8,7 +8,7 @@ import { browsePictures } from "./photo.js";
 import { refreshTasks, typing } from "./tasks.js";
 import { fullScreenVideo, pauseVideo, playVideo, resumeVideo, stopVideo } from "./youtube.js";
 
-const FOCUS_MS = 3 * 60_000; // enlarged views go back to normal by themselves
+const FOCUS_MS = 3 * 60_000; // enlarged cards go back to normal by themselves
 const DONE_MS = 2 * 60_000; // how long "Time's up" stays if nobody taps it
 const CHIME_EVERY_MS = 2_500;
 const CHIMES = 8;
@@ -59,8 +59,12 @@ function show(view, range) {
   delete body.dataset.focus;
   body.classList.remove("photo-mode");
   if (view === "home") return;
-  if (view === "picture") body.classList.add("photo-mode");
-  else if (view === "tasks") body.dataset.focus = "calendar"; // the tasks are a tab of that card
+  if (view === "picture") {
+    // The picture alone stays until Muse is asked to bring things back, or a tap.
+    body.classList.add("photo-mode");
+    return;
+  }
+  if (view === "tasks") body.dataset.focus = "calendar"; // the tasks are a tab of that card
   else if (view in FOCUSED) body.dataset.focus = view;
   else return;
   if (view === "tasks") setAgendaView("tasks");
