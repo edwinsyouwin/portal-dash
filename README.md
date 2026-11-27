@@ -73,10 +73,11 @@ Setup:
 1. Copy `photoflow/profile.example.toml` to `photoflow/profile.toml` and edit it: who is
    in the pictures, your own scenes (interests and memories) and styles.
    `photoflow/flow.py gather` fills `photoflow/refs/` for you: ten close-ups of each
-   subject's face, cropped from the clearest recent photos of them in Photos (no
-   sunglasses, eyes open, nobody else in the crop), and six photos of everyone together.
+   subject's face, cropped from the best-rated recent photos of them in Photos (no
+   selfies or sunglasses, eyes open, nobody else in the crop), and six photos of everyone together.
    Look through them and delete any that are not a good likeness; `gather --replace`
-   starts again. Each picture is then made from one group photo and two close-ups of
+   starts again, and `gather --day 2025-06-01` adds close-ups from one occasion's photos
+   (a wedding, a party), fetching that day's full-size originals from iCloud to crop from. Each picture is then made from one group photo and two close-ups of
    each subject (`reference_portraits` in `profile.toml`), which gives a much better
    likeness than a single photo and costs a few cents more per picture.
    Reference photos come from `photoflow/refs/` when it has any: group photos in

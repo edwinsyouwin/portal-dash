@@ -58,6 +58,7 @@ GATHER_YEARS = 3
 # Face width as a fraction of the photo's long edge. Low enough to let in photos taken
 # by someone else, from further away than a selfie.
 GATHER_MIN_FACE = 0.06
+GATHER_MIN_FACE_ON_DAY = 0.02  # with --day: an occasion's photos are often full-length
 GATHER_MIN_FACE_TOGETHER = 0.05
 GATHER_MAX_TURN = 0.6  # radians the head may be turned away from the camera
 PORTRAIT_FACES_WIDE = 3  # a close-up is this many face-widths across: head and shoulders
@@ -594,6 +595,20 @@ def people(args):
 # ---------- Gathering reference photos ----------
 
 
+def in_colour(image):
+    """False for a black-and-white picture, which says nothing about skin, hair or coat."""
+    import Quartz
+
+    size = 16
+    context = Quartz.CGBitmapContextCreate(
+        None, size, size, 8, size * 4, Quartz.CGColorSpaceCreateDeviceRGB(), Quartz.kCGImageAlphaNoneSkipLast)
+    Quartz.CGContextDrawImage(context, Quartz.CGRectMake(0, 0, size, size), image)
+    small = Quartz.CGBitmapContextCreateImage(context)
+    data = bytes(Quartz.CGDataProviderCopyData(Quartz.CGImageGetDataProvider(small)))
+    spread = [max(data[i:i + 3]) - min(data[i:i + 3]) for i in range(0, size * size * 4, 4)]
+    return sum(spread) / len(spread) > 6
+
+
 def crop_square(source, dest, centre, side):
     """Save the square of `source` around `centre` as a JPEG. `centre` and `side` are
     fractions of the picture's width and height, and of its long edge. Returns the
@@ -609,15 +624,19 @@ def crop_square(source, dest, centre, side):
     image = Quartz.CGImageSourceCreateThumbnailAtIndex(image_source, 0, {
         Quartz.kCGImageSourceCreateThumbnailFromImageAlways: True,
         Quartz.kCGImageSourceCreateThumbnailWithTransform: True,
-        Quartz.kCGImageSourceThumbnailMaxPixelSize: 4096,
+        Quartz.kCGImageSourceThumbnailMaxPixelSize: 8192,
     })
     if image is None:
         return 0
     width, height = Quartz.CGImageGetWidth(image), Quartz.CGImageGetHeight(image)
     pixels = int(min(side * max(width, height), width, height))
+    if pixels < PORTRAIT_MIN_PX:
+        return 0
     left = min(max(centre[0] * width - pixels / 2, 0), width - pixels)
     top = min(max(centre[1] * height - pixels / 2, 0), height - pixels)
     square = Quartz.CGImageCreateWithImageInRect(image, Quartz.CGRectMake(int(left), int(top), pixels, pixels))
+    if not in_colour(square):
+        return 0
     with tempfile.NamedTemporaryFile(suffix=".png") as raw:
         out = Quartz.CGImageDestinationCreateWithURL(NSURL.fileURLWithPath_(raw.name), "public.png", 1, None)
         Quartz.CGImageDestinationAddImage(out, square, None)
@@ -631,13 +650,38 @@ def crop_square(source, dest, centre, side):
     return pixels
 
 
+def download_originals(days, folder):
+    """Fetch the full-size originals of those days' photos from iCloud into `folder`,
+    each named by its id in Photos. The copies Photos keeps on the Mac are often too
+    small to crop a face from. Returns {photo id: path}; empty if Photos would not do it.
+    """
+    for day in days:
+        subprocess.run(
+            [sys.executable, "-m", "osxphotos", "export", str(folder), "--from-date", day.isoformat(),
+             "--to-date", (day + dt.timedelta(days=1)).isoformat(), "--only-photos", "--skip-edited",
+             "--skip-live", "--skip-raw", "--download-missing", "--filename", "{uuid}", "--no-progress"],
+            capture_output=True,
+        )
+    return {path.stem: path for path in images_in(Path(folder))}
+
+
 def gather(args):
     """Fill refs/ from the Photos library: close-ups of each subject's face, cropped from
     the clearest recent photos of them, and photos of everyone together.
 
     A subject whose folder already has photos is left alone (they may be hand-picked)
     unless --replace is given. Look through the result and delete any that are not them.
+
+    With --day, close-ups from just those days (a wedding, a party) are added to what
+    is there: every good one, not one a day, and nothing is cleared. Those days'
+    full-size originals are fetched from iCloud first, for the duration.
     """
+    with tempfile.TemporaryDirectory() as tmp:
+        originals = download_originals(args.day, tmp) if args.day else {}
+        gather_into_refs(args, originals)
+
+
+def gather_into_refs(args, originals):
     profile = load_profile()
     subjects = profile["subjects"]
     db = open_library(profile)
@@ -665,8 +709,13 @@ def gather(args):
         good Photos thinks the picture is, with a nudge for Portrait mode."""
         return (photo.date.year >= recent, photo.score.overall + (0.2 if photo.portrait else 0))
 
+    on_days = set(args.day or [])
+
     def folder_for(name):
         folder = REFS / name
+        if on_days:
+            folder.mkdir(parents=True, exist_ok=True)
+            return folder
         if images_in(folder) and not args.replace:
             print(f"{name}: has photos already, left alone (--replace to start again)")
             return None
@@ -681,12 +730,13 @@ def gather(args):
             continue
         usable = [
             (face, photo) for face, photo in faces[key]
-            if face.size >= GATHER_MIN_FACE and abs(face.yaw or 0) <= GATHER_MAX_TURN
+            if face.size >= (GATHER_MIN_FACE_ON_DAY if on_days else GATHER_MIN_FACE)
+            and abs(face.yaw or 0) <= GATHER_MAX_TURN
             and face.glasses_type != SUNGLASSES and face.eye_state != EYES_CLOSED
-            and not photo.selfie
+            and not photo.selfie and (not on_days or photo.date.date() in on_days)
         ]
         usable.sort(key=lambda pair: presentable(pair[1]), reverse=True)
-        days = set()
+        days = set()  # or photos, with --day
         for face, photo in usable:
             if len(days) == GATHER_PORTRAITS:
                 break
@@ -711,13 +761,11 @@ def gather(args):
             ):
                 continue
             dest = folder / f"{day}-{photo.uuid[:8]}.jpg"
-            if crop_square(local_file(photo), dest, centre, side) >= PORTRAIT_MIN_PX:
-                days.add(day)
-            else:
-                dest.unlink(missing_ok=True)
-        print(f"{subject['name']}: {len(days)} close-ups in {folder}")
+            if crop_square(originals.get(photo.uuid) or local_file(photo), dest, centre, side):
+                days.add(photo.uuid if on_days else day)
+        print(f"{subject['name']}: {len(days)} close-ups {'added to' if on_days else 'in'} {folder}")
 
-    folder = folder_for("together")
+    folder = None if on_days else folder_for("together")
     if folder is not None:
         usable = [
             photo for photo, shown in groups
@@ -877,6 +925,10 @@ def main():
 
     gather_parser = commands.add_parser("gather", help="collect reference photos from Photos into refs/")
     gather_parser.add_argument("--replace", action="store_true", help="start again where refs/ already has photos")
+    gather_parser.add_argument(
+        "--day", type=dt.date.fromisoformat, action="append",
+        help="add close-ups from this day's photos (YYYY-MM-DD; may be repeated), keeping what is there",
+    )
     gather_parser.set_defaults(handler=gather)
 
     serve_parser = commands.add_parser("serve", help="serve out/ to the Portal")
