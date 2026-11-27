@@ -7,8 +7,10 @@ const CACHE_KEY = "tasks";
 const POLL_MS = 60_000;
 const ERROR_MS = 6_000;
 const MAX_CHARS = 120; // as the Mac enforces
+const WAIT_MS = 8_000; // how long the Mac gets to make a change
 
 let tasks = [];
+let waiting = 0; // changes the Mac has not answered yet
 let editing = null; // id of the task whose words are being changed
 let error = "";
 let errorTimer = null;
@@ -46,7 +48,8 @@ function keep(list) {
 
 /** The latest list from the Mac; on failure, what was last seen stays up. */
 export async function refreshTasks() {
-  if (!tasksOn()) return;
+  // Not while a change is on its way: the Mac's answer to that brings the list anyway.
+  if (!tasksOn() || waiting) return;
   try {
     const response = await fetch(`${serverUrl()}/tasks.json`, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -57,23 +60,50 @@ export async function refreshTasks() {
   redraw();
 }
 
+/** The list as it will be once the Mac has made a change. A new task has no id yet. */
+function changed(request) {
+  const { action, id } = request;
+  if (action === "add") return [...tasks, { id: 0, text: request.text, done: false }];
+  if (action === "delete") return tasks.filter((task) => task.id !== id);
+  if (action === "clear_done") return tasks.filter((task) => !task.done);
+  return tasks.map((task) => {
+    if (task.id !== id) return task;
+    return { ...task, text: request.text ?? task.text, done: request.done ?? task.done };
+  });
+}
+
+/**
+ * Asks the Mac to change the list. The card shows the change at once, so that a tap is
+ * answered even when the Mac is slow, and takes it back if the Mac does not make it.
+ */
 async function change(request) {
+  const before = tasks;
+  tasks = changed(request);
+  waiting++;
+  redraw(true);
   try {
-    // Plain text, so the browser sends it without asking the Mac's permission first.
-    const response = await fetch(`${serverUrl()}/tasks`, { method: "POST", body: JSON.stringify(request) });
+    const response = await fetch(`${serverUrl()}/tasks`, {
+      method: "POST",
+      // Plain text, so the browser sends it without asking the Mac's permission first.
+      body: JSON.stringify(request),
+      signal: AbortSignal.timeout(WAIT_MS),
+    });
     const answer = await response.json();
     if (!response.ok) throw new Error(answer.error);
     keep(answer.tasks);
     error = "";
   } catch (problem) {
+    tasks = before;
     // fetch() reports an unreachable server as a TypeError.
-    error = problem instanceof TypeError ? "Can't reach the Mac" : problem.message;
+    const away = problem instanceof TypeError || problem.name === "TimeoutError";
+    error = away ? "Can't reach the Mac" : problem.message;
     clearTimeout(errorTimer);
     errorTimer = setTimeout(() => {
       error = "";
       redraw();
     }, ERROR_MS);
   }
+  waiting--;
   redraw(true);
 }
 
@@ -126,7 +156,8 @@ function taskClicked(event) {
   const task = tasks.find((candidate) => candidate.id === id);
   const action = target.dataset.task;
   if (action === "clear") change({ action: "clear_done" });
-  else if (!task || action === "words") return;
+  // A task the Mac has not numbered yet cannot be changed.
+  else if (!task?.id || action === "words") return;
   else if (action === "toggle") change({ action: "update", id, done: !task.done });
   else if (action === "delete") change({ action: "delete", id });
   else if (action === "edit") {
